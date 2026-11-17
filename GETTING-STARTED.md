@@ -460,6 +460,41 @@ written 24 beats; first 0.000484 last 11.500484; duration 12
 - 只有标了 `sync:"beat"` 的动作受 80 ms 约束。**别给所有动作都标**——末句余韵、留白、走位本来就该偏离网格，标了只会制造假警告。
 - `deltaMs` 为负是早于拍点，为正是晚于拍点。偏移量本身不判断好坏，判断的是你有没有意识到它偏了。
 
+### 6.5 加音效层（音效跟画面，不跟拍点）
+
+到这里画面已经踩在拍点上了。音效要加在**画面事件上**，不是加在拍点上——同一拍被强调两遍会发木。对着参考片量过：一条 209 秒的片子有 218 个瞬变（每秒约 1 个），只有 38% 落在 80 ms 内，中位偏 141 ms。
+
+音效写在分镜里，和事件同层：
+
+```json
+"scenes": [{
+  "events": [{ "at": 3.0, "action": "数字跳到 42", "sync": "beat" }],
+  "sfx":    [{ "at": 3.0, "type": "tick", "gain": 0.60 }]
+}]
+```
+
+`type` 只有八种：`tick`（刻度/数字）、`type`（打字机）、`click`（UI）、`whoosh`（转场）、`confirm`（勾选）、`error`（失败）、`riser`（预热）、`chime`（收束）。全部由代码合成，不含素材。`gain` 0–2，`pitch` 0.5–2。
+
+```powershell
+# 合成音效轨：长度严格等于 project.duration
+node skills/lyric-driven-code-mv/scripts/sfx.mjs --from-storyboard work/sb-real.json --out work/sfx.wav --report work/sfx-report.json
+
+# 混音：音乐 1.0，音效 0.85
+ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1 0.85,alimiter=limit=0.95" -c:v copy -c:a aac -b:a 192k work/final.mp4
+```
+
+实测（12 秒示范片，9 个音效事件）：
+
+```
+音效轨 work/sfx.wav｜9 个事件 / 每分钟 45 个｜峰值 0.4002｜裁掉 1 个越界事件
+```
+
+「裁掉 1 个」是片尾 11.5 s 的 `chime`（850 ms）越过 12 s 被截断，渲染器在首尾各有 8 ms 淡入淡出，不会爆音。
+
+**怎么确认音效真的在那一刻**：对比"只有音乐"与"音乐+音效"两条轨，看差值是否起于该时刻——事件前 100 ms 应近乎静音，事件窗口内有明显能量，事件后衰减。实测 9 个事件全部命中（前 0.002 / 内 0.155 / 后 0.037）。三段差不多大就说明音效铺满了整段，没有起音点。
+
+细节与八种音效的用法见 [音效层与卡点](skills/lyric-driven-code-mv/references/sfx-and-beat.md)。
+
 ---
 
 ## 7. 三档校验

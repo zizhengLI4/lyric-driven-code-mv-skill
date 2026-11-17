@@ -75,6 +75,31 @@ export function analyzeStoryboard(data, options = {}) {
     array(value, path).forEach((entry, i) => id(entry, `${path}[${i}]`, seen));
     return seen;
   };
+  // 与 scripts/sfx.mjs 的 SFX 表一一对应；tests/sfx.test.mjs 断言两边不漂移。
+  const SFX_TYPES = ['chime', 'click', 'confirm', 'error', 'riser', 'tick', 'type', 'whoosh'];
+  const checkSfx = (value, path, limit) => {
+    if (value === undefined) return;
+    if (!Array.isArray(value)) {
+      fail(path, '若提供，必须为数组');
+      return;
+    }
+    value.forEach((entry, i) => {
+      const itemPath = `${path}[${i}]`;
+      const item = object(entry, itemPath);
+      if (!item) return;
+      if (finite(item.at, `${itemPath}.at`)) {
+        if (item.at < 0) fail(`${itemPath}.at`, '必须为非负数');
+        else if (limit !== null && item.at >= limit) fail(`${itemPath}.at`, '必须小于 project.duration');
+      }
+      if (!SFX_TYPES.includes(item.type)) fail(`${itemPath}.type`, `必须为 ${SFX_TYPES.join('、')} 之一`);
+      if (item.gain !== undefined && finite(item.gain, `${itemPath}.gain`)) {
+        if (item.gain < 0 || item.gain > 2) fail(`${itemPath}.gain`, '必须在 0–2 之间');
+      }
+      if (item.pitch !== undefined && finite(item.pitch, `${itemPath}.pitch`)) {
+        if (item.pitch < 0.5 || item.pitch > 2) fail(`${itemPath}.pitch`, '必须在 0.5–2 之间');
+      }
+    });
+  };
 
   if (!object(data, 'storyboard')) return { errors, warnings };
   if (data.schemaVersion !== 1) fail('schemaVersion', '必须为 1');
@@ -136,6 +161,7 @@ export function analyzeStoryboard(data, options = {}) {
   // sourceOffset is metadata: interval checks always use the unshifted clip clock.
   const duration = project.duration;
   const validDuration = typeof duration === 'number' && Number.isFinite(duration) && duration > 0;
+  checkSfx(project.sfx, 'project.sfx', validDuration ? duration : null);
   const validInterval = entry => isObject(entry) && isFiniteNumber(entry.start) && isFiniteNumber(entry.end)
     && entry.start >= 0 && entry.start < entry.end && validDuration && entry.start < duration && entry.end <= duration + EPSILON;
   const intersects = (a, b) => validInterval(a) && validInterval(b) && a.start < b.end && b.start < a.end;
@@ -280,6 +306,7 @@ export function analyzeStoryboard(data, options = {}) {
         text(variant.change, `${path}.materialVariant.change`);
       }
     }
+    checkSfx(scene.sfx, `${path}.sfx`, validDuration ? duration : null);
     if (scene.hud !== undefined) {
       const hudIds = new Set();
       const hudTypes = ['counter', 'bar', 'heart', 'status', 'clock', 'badge', 'log', 'checklist', 'axis', 'level', 'score', 'banner'];

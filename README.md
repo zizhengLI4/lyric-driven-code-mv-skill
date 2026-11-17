@@ -91,6 +91,7 @@
 - **点阵标题牌**：`pixel-font.py` 把数字与字母烘成 6×8 点阵（图集 PNG + 点阵 JSON），中文仍用系统字体，混排接近参考片的标题牌质感。
 - **最小渲染器**：`minimal-renderer.py` 只依赖 Pillow 与 FFmpeg，不装 starter 也能把分镜渲成带标题牌、数值 HUD 与双语字幕的无声片，用来快速验证排布。
 - **装置模板库**：`assets/devices/` 五个可直接粘的骨架（私信、读档、清单、结算、双轴滑块），各带三条外壳规则、`scene.hud[]` 与 4–5 个带数值事件；字段映射见 [装置模板](skills/lyric-driven-code-mv/references/device-templates.md)。
+- **音效合成**：`scripts/sfx.mjs` 用振荡器与确定性噪声合成八种音效（tick / type / click / whoosh / confirm / error / riser / chime），长度严格等于 `project.duration`，首尾自动淡入淡出；`project.sfx[]` 与 `scene.sfx[]` 由校验器检查类型、时间与增益。两层对齐关系见 [音效层与卡点](skills/lyric-driven-code-mv/references/sfx-and-beat.md)。
 - **音轨追踪与单帧检查**：音频重定位核对同一素材，导出保存实际音轨哈希与署名记录；可先导出某个时点的世界层PNG，再检查正式成片字幕。
 - **两种导出方式**：管道直出适合快速验证；PNG 落盘与恢复适合保留渲染进度。
 - **画面验收**：通过接触表查看整体叙事，再检查每镜和转场的关键帧。
@@ -168,6 +169,27 @@ cut-to-beat offset median 250ms, max 500ms, within 80ms: 1/2
 
 `within 80ms` 比例高说明切点大致落在拍上；median 偏大说明整段错位，该回去改时窗，而不是改画面。
 
+**⑤ 叠音效层：画面踩拍，音效跟画面**
+
+这条容易被弄反。对着参考片量过：一条 209 秒的数据可视化叙事片里检出 218 个宽带瞬变（每秒约 1 个），但只有 38% 落在 80 ms 拍点容差内，中位偏离 141 ms。也就是说——**画面整齐落在拍上，音效密密麻麻跟着画面，音效本身并不踩拍**。音效再踩一次，同一拍会被强调两遍，听感发木。
+
+音效写进分镜，和画面事件同层，才能被同一份校验器检查：
+
+```json
+"project": { "sfx": [{ "at": 0, "type": "riser", "gain": 0.40 }] },
+"scenes": [{
+  "events": [{ "at": 3.0, "action": "数字跳到 42", "sync": "beat" }],
+  "sfx":    [{ "at": 3.0, "type": "tick", "gain": 0.60 }]
+}]
+```
+
+```powershell
+node skills/lyric-driven-code-mv/scripts/sfx.mjs --from-storyboard work/storyboard.json --out work/sfx.wav --report work/sfx-report.json
+ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1 0.85,alimiter=limit=0.95" -c:v copy -c:a aac -b:a 192k work/final.mp4
+```
+
+八种音效全是代码合成的（tick / type / click / whoosh / confirm / error / riser / chime），没有采样素材也就没有授权问题。实测 12 秒示范片 9 个事件：音效轨长度严格 12.000000 s，混音后逐事件验证 9/9 命中——事件前 100 ms 差值 0.002，事件窗口内 0.155，事件后 0.037，证明起音确实落在写的那一刻。
+
 **能证明什么、不能证明什么**
 
 - 能：拍点网格在哪、哪个动作偏了多少毫秒、整片切点是否系统性地不在拍上。
@@ -230,4 +252,4 @@ node --test
 
 测试可使用 `FFMPEG_PATH` / `FFPROBE_PATH` 指向已有程序；PATH 中缺少工具时只跳过需要实际解码/编码的用例，并说明原因。显式配置无效路径会报错。`--strict` 把结构警告升级为失败，通过它仍需核听；草稿交付须附 `music.pendingChecks` 具体时间区间与检查内容。使用说明见 [SKILL.md](skills/lyric-driven-code-mv/SKILL.md)、[时间与分镜](skills/lyric-driven-code-mv/references/storyboard-and-timing.md)、[像素/字幕](skills/lyric-driven-code-mv/references/pixel-game-visuals.md)、[音频/授权](skills/lyric-driven-code-mv/references/audio-and-rights.md)、[依赖/验收](skills/lyric-driven-code-mv/references/dependencies-and-delivery.md)。
 
-长期维护、复现反馈、兼容性、发布与回退流程见 [维护指南](MAINTENANCE.md)。同步图的误差解释与器乐叙事字幕说明见 [同步复核](skills/lyric-driven-code-mv/references/sync-review.md)；装置骨架的字段映射见 [装置模板](skills/lyric-driven-code-mv/references/device-templates.md)；40 条参考作品的复盘与改进依据见 [案例研究](docs/CASE-STUDY-2026-11.md)。
+长期维护、复现反馈、兼容性、发布与回退流程见 [维护指南](MAINTENANCE.md)。同步图的误差解释与器乐叙事字幕说明见 [同步复核](skills/lyric-driven-code-mv/references/sync-review.md)；音效与拍点的两层关系见 [音效层与卡点](skills/lyric-driven-code-mv/references/sfx-and-beat.md)；装置骨架的字段映射见 [装置模板](skills/lyric-driven-code-mv/references/device-templates.md)；40 条参考作品的复盘与改进依据见 [案例研究](docs/CASE-STUDY-2026-11.md)。

@@ -52,9 +52,11 @@ python scripts/safe-area.py --video work/mv.mp4 --at 3 10 -o work/check.png
 python scripts/film-sheet.py shots/<片名> -o sheet.jpg --cols 3
 python scripts/pixel-font.py --sample work/title-sample.png
 python scripts/minimal-renderer.py path/to/storyboard.json --probe 0 120 300
+node scripts/sfx.mjs --from-storyboard path/to/storyboard.json --out work/sfx.wav --report work/sfx-report.json
+node scripts/sfx.mjs --list
 ```
 
-`hud-density.mjs` 把切镜、材质、HUD、事件、字幕五类变化摊到时间轴上，报最长空白窗与单镜内部空窗；`--strict` 时有空窗即非零退出。`timeline-sync.py` 从音轨取能量包络并估拍点，与切镜、字幕画进同一张图，标 `speculative` 的 BPM 只能用来发现整段踩错，不能据此宣称同步。`safe-area.py` 叠平台安全区（顶部、底部 8.5%、右侧 6.5%、4:3、9:16），字幕底边与 HUD 都要躲开。`minimal-renderer.py` 是不用 starter 工程也能出画面的最小实现，演示标题牌、数值 HUD 与双语字幕。
+`hud-density.mjs` 把切镜、材质、HUD、事件、音效、字幕六类变化摊到时间轴上，报最长空白窗与单镜内部空窗；`--strict` 时有空窗即非零退出。`timeline-sync.py` 从音轨取能量包络并估拍点，与切镜、字幕画进同一张图，标 `speculative` 的 BPM 只能用来发现整段踩错，不能据此宣称同步。`safe-area.py` 叠平台安全区（顶部、底部 8.5%、右侧 6.5%、4:3、9:16），字幕底边与 HUD 都要躲开。`minimal-renderer.py` 是不用 starter 工程也能出画面的最小实现，演示标题牌、数值 HUD 与双语字幕。`sfx.mjs` 合成八种音效（tick/type/click/whoosh/confirm/error/riser/chime），长度严格等于 `project.duration`，供混音使用；两层对齐关系见 [音效层与卡点](references/sfx-and-beat.md)——**画面踩拍点，音效跟画面同帧，音效不踩拍**。
 
 校验器保留 `validateStoryboard(data) → errors[]`，提供 `analyzeStoryboard(data,{beatToleranceMs,delivery}) → {errors,warnings}`。普通提示不改变退出码；`--strict` 只是将结构检查中的警告视为失败，通过不证明可发布或 `verified`。`--delivery` 检查许可记录、音乐证据及草稿待核对清单，字段规则见时间与分镜参考。跨镜歌词、显式踩拍事件、HUD 支撑、装置/章节覆盖及授权缺项都有可定位的提示；工具不证明语义正确、许可有效或实际音画同步。
 
@@ -65,5 +67,6 @@ python scripts/minimal-renderer.py path/to/storyboard.json --probe 0 120 300
 - 同帧重复和乱序求值一致，首尾、每镜及转场没有状态漂移；摄像机移动不露黑，字幕清晰。
 - 字幕底边与 HUD 都在平台安全区内：用 `safe-area.py` 叠一帧确认，别只看成片。
 - `hud-density.mjs` 报出的最长空窗不超过 12 秒；超过就先补变化，别加镜头。
+- 音效落在画面事件上（不是拍点上），`project.sfx[]`/`scene.sfx[]` 通过校验，混音后峰值不削顶。
 - 成片音视频流、时长、画幅和帧率正确；音乐证据状态及实际检查范围写清楚。
 - 交付可编辑源文件、分镜与分析数据、资源来源/许可/署名、所选依赖锁文件（使用依赖时）、成片和简短验收记录。仅请求报告、分镜或草稿时交付对应阶段，不擅自扩展整曲。

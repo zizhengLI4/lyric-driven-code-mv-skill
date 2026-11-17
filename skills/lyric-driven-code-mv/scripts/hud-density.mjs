@@ -4,11 +4,12 @@
 // 依据：参考片复盘得到的判据是"每 8–12 秒至少出现一次可读变化"，而不是固定的镜长。
 // 这个脚本把五类变化摊到时间轴上，告诉你哪个段落其实在空转。
 //
-// 五类变化（与 references/story-devices.md 的字段约定一致）：
+// 六类变化（与 references/story-devices.md 的字段约定一致）：
 //   cut       scene 起点（第一镜除外）
 //   material  scene.materialVariant 出现（同一构图换材质）
 //   hud       scene.hud[] 建立的读数，或带 event.hud 的事件
 //   event     scene.events[].at
+//   sfx       project.sfx[] / scene.sfx[] 的音效落点（听得见的变化也算一次变化）
 //   lyric     lyrics[].start
 //
 // 用法：
@@ -20,7 +21,7 @@
 
 import { readFileSync } from 'node:fs';
 
-const TYPES = ['cut', 'material', 'hud', 'event', 'lyric'];
+const TYPES = ['cut', 'material', 'hud', 'event', 'sfx', 'lyric'];
 
 const num = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 const round = (value) => Math.round(value * 1000) / 1000;
@@ -60,7 +61,21 @@ export function analyzeDensity(data, options = {}) {
         push(event.at, event.hud !== undefined ? 'hud' : 'event', String(event.action ?? ''));
       });
     }
+
+    if (Array.isArray(scene.sfx)) {
+      scene.sfx.forEach((item) => {
+        if (!item || typeof item !== 'object') return;
+        push(item.at, 'sfx', String(item.type ?? 'sfx'));
+      });
+    }
   });
+
+  if (Array.isArray(data?.project?.sfx)) {
+    data.project.sfx.forEach((item) => {
+      if (!item || typeof item !== 'object') return;
+      push(item.at, 'sfx', String(item.type ?? 'sfx'));
+    });
+  }
 
   lyrics.forEach((line, index) => {
     push(line.start, 'lyric', String(line.id ?? `line-${index + 1}`));
