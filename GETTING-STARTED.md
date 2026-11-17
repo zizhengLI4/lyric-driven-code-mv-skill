@@ -452,6 +452,8 @@ written 24 beats; first 0.000484 last 11.500484; duration 12
 
 `--strict` 下同一条警告会让退出码变成 1。容差改法：`project.settings.beatToleranceMs`。
 
+> 这里报 `129.516` 而不是整数 `130`，是因为网格换成了机器候选：`5.63 − 5.500484 = 0.129516`。那 0.484 毫秒就是上面的 `phaseSeconds`。README 里同一段用的是 `0.5` 秒整数网格，所以写的是 `130`——两处都对，差在网格来源。
+
 三条硬规则，踩过就白跑：
 
 - `music.beats` 必须**严格递增**，且每个点都在 `[0, duration)` 内。把 `duration` 从 12 改成 10 却不删末尾拍点，校验器会按 `music.beats[i]: 必须位于 [0, duration)` 报错。
