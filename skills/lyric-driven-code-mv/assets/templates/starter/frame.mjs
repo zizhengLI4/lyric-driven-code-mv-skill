@@ -86,6 +86,35 @@ export class FB {
     const left = Math.max(0, cx - rx), right = Math.min(this.width - 1, cx + rx), top = Math.max(0, cy - ry), bottom = Math.min(this.height - 1, cy + ry);
     for (let py = top; py <= bottom; py++) for (let px = left; px <= right; px++) if ((px - cx) ** 2 / (rx * rx) + (py - cy) ** 2 / (ry * ry) <= 1) this.put(px, py, color);
   }
+  /**
+   * 画一个由外向内的像素光晕。它只负责铺底层，主体应在 glow 返回后绘制。
+   * color 可为 RGB 或 RGBA；alpha 用于把亮度压低而不改变确定性。
+   */
+  glow(x, y, radius, color, { steps = 4, alpha = 1 } = {}) {
+    coordinate(radius);
+    if (!Array.isArray(color) || color.length < 3 || !color.slice(0, 3).every(Number.isFinite)) throw new Error('glow 颜色必须为 RGB/RGBA 数组');
+    if (!Number.isInteger(steps) || steps < 1 || steps > 32) throw new Error('glow steps 必须为 1–32 的整数');
+    if (!Number.isFinite(alpha) || alpha < 0 || alpha > 1) throw new Error('glow alpha 必须为 0–1');
+    for (let i = steps; i >= 1; i--) {
+      const k = i / steps;
+      const fade = alpha * (1 - k * 0.72);
+      this.circle(x, y, radius * k, [color[0] * fade, color[1] * fade, color[2] * fade, color[3] ?? 255]);
+    }
+    return this;
+  }
+  /**
+   * 统一装饰层顺序：先执行 glow/underlay，再执行 subject/body/main。
+   * 支持 layer({ glow, subject })，也支持 layer(glowFn, subjectFn)。
+   */
+  layer(spec, subject) {
+    const glow = typeof spec === 'function' ? spec : spec?.glow ?? spec?.underlay;
+    const body = typeof spec === 'function' ? subject : spec?.subject ?? spec?.body ?? spec?.main;
+    if (glow !== undefined && typeof glow !== 'function') throw new Error('layer.glow 必须为函数');
+    if (body !== undefined && typeof body !== 'function') throw new Error('layer.subject 必须为函数');
+    glow?.(this);
+    body?.(this);
+    return this;
+  }
   poly(points, color) {
     const p = points.map(([x, y]) => [this.X(x), this.Y(y)]);
     const top = Math.max(0, Math.min(...p.map(v => v[1]))), bottom = Math.min(this.height - 1, Math.max(...p.map(v => v[1])));

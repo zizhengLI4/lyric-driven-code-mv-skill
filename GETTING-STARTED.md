@@ -476,11 +476,17 @@ written 24 beats; first 0.000484 last 11.500484; duration 12
 `type` 只有八种：`tick`（刻度/数字）、`type`（打字机）、`click`（UI）、`whoosh`（转场）、`confirm`（勾选）、`error`（失败）、`riser`（预热）、`chime`（收束）。全部由代码合成，不含素材。`gain` 0–2，`pitch` 0.5–2。
 
 ```powershell
-# 合成音效轨：长度严格等于 project.duration
-node skills/lyric-driven-code-mv/scripts/sfx.mjs --from-storyboard work/sb-real.json --out work/sfx.wav --report work/sfx-report.json
+# 一条命令：合成音效 → 与音轨混音 → 编码
+node skills/lyric-driven-code-mv/assets/templates/starter/export.mjs --storyboard work/sb-real.json --audio 你的歌.wav --sfx --out work/final.mp4
+```
 
-# 混音：音乐 1.0，音效 0.85
-ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1 0.85,alimiter=limit=0.95" -c:v copy -c:a aac -b:a 192k work/final.mp4
+默认权重 0.85（`--sfx-gain` 可调）。分镜里一个 sfx 都没写时它直接报错，不会悄悄漏掉音效。
+
+要单独拿音效轨或自己控权重，退回分步做：
+
+```powershell
+node skills/lyric-driven-code-mv/scripts/sfx.mjs --from-storyboard work/sb-real.json --out work/sfx.wav --report work/sfx-report.json
+ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1 0.85:normalize=0,alimiter=limit=0.95" -c:v copy -c:a aac -b:a 192k work/final.mp4
 ```
 
 实测（12 秒示范片，9 个音效事件）：
@@ -491,7 +497,7 @@ ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=input
 
 「裁掉 1 个」是片尾 11.5 s 的 `chime`（850 ms）越过 12 s 被截断，渲染器在首尾各有 8 ms 淡入淡出，不会爆音。
 
-**怎么确认音效真的在那一刻**：对比"只有音乐"与"音乐+音效"两条轨，看差值是否起于该时刻——事件前 100 ms 应近乎静音，事件窗口内有明显能量，事件后衰减。实测 9 个事件全部命中（前 0.002 / 内 0.155 / 后 0.037）。三段差不多大就说明音效铺满了整段，没有起音点。
+**怎么确认音效真的在那一刻**：对比"只有音乐"与"音乐+音效"两条轨，看差值是否起于该时刻——事件前 100 ms 应近乎静音，事件窗口内有明显能量，事件后衰减。实测 9 个事件全部命中（前 0.0000 / 内 0.0240 / 后 0.0001）。三段差不多大就说明音效铺满了整段，没有起音点。
 
 细节与八种音效的用法见 [音效层与卡点](skills/lyric-driven-code-mv/references/sfx-and-beat.md)。
 

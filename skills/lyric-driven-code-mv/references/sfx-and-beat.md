@@ -89,45 +89,63 @@
 
 ## 渲染与混音
 
+推荐一条命令，导出时直接把音效混进去：
+
 ```powershell
-# 1) 从分镜抽音效并合成一条轨（长度严格等于 project.duration）
+node export.mjs --storyboard storyboard.json --audio 你的歌.wav --sfx --out work/final.mp4
+node export.mjs --storyboard storyboard.json --audio 你的歌.wav --sfx --sfx-gain 0.7 --out work/final.mp4
+```
+
+`--sfx` 内部做三件事：读 `project.sfx[]` 与 `scene.sfx[]` → 合成 `sfx.wav` → `amix` 混进 `audio.wav` 再编码。混音结果覆盖内部 `audio.wav`，所以 `.mp4.assets.json` 里记录的哈希是最终音轨。分镜里没有任何 sfx 时直接报错，不会悄悄导出一条没有音效的片子。
+
+要单独拿音效轨（贴进别的剪辑软件），或自己控制权重与限幅：
+
+```powershell
+# 1) 合成一条独立音效轨（长度严格等于 project.duration）
 node scripts/sfx.mjs --from-storyboard storyboard.json --out work/sfx.wav --report work/sfx-report.json
 
-# 2) 导出无声/带音乐的成片
+# 2) 导出（不带音效的）成片
 node assets/templates/starter/export.mjs --storyboard storyboard.json --out work/demo.mp4
 
 # 3) 混音：音乐 1.0，音效 0.85
-ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1 0.85,alimiter=limit=0.95" -c:v copy -c:a aac -b:a 192k work/final.mp4
+ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1 0.85:normalize=0,alimiter=limit=0.95" -c:v copy -c:a aac -b:a 192k work/final.mp4
 ```
 
-实测（12 秒示范片，9 个音效事件）：
+实测（12 秒示范片，9 个音效事件，一条命令版）：
 
 ```
-音效轨 work/sfx.wav｜9 个事件 / 每分钟 45 个｜峰值 0.4002｜裁掉 1 个越界事件
-成片：h264 + aac，48 kHz，duration 12.000000
+音效 9 个（每分钟 45 个）已混入音轨，权重 0.85；1 个越界事件被裁在片尾
+成片：h264 + aac，48 kHz 立体声，duration 12.000000
 ```
 
-`裁掉 1 个越界事件`是正常的：11.5 s 的 `chime`（850 ms）会越过 12 s 边界，被裁在片尾。渲染器在首尾各做 8 ms 淡入淡出，所以截断处不会爆音。
+「1 个越界事件」是正常的：11.5 s 的 `chime`（850 ms）会越过 12 s 边界，被裁在片尾。渲染器在首尾各做 8 ms 淡入淡出，所以截断处不会爆音。
 
 ## 怎么验证音效真的在（别只靠听）
 
-对比"只有音乐"和"音乐+音效"两条轨，在事件时刻取窗口，看差值是否起于该时刻：
+对比"只有音乐"和"音乐+音效"两条轨，在事件时刻取窗口，看差值是否起于该时刻（一条命令导出的两个版本）：
 
 ```
-采样率 16000 | 事件 9 个 | 全片基线差值 RMS 0.04950
+采样率 16000 | 事件 9 个 | 全片基线差值 RMS 0.00961
     事件 类型      窗口差值RMS    峰值差  相对基线  局部对比  判定
-    0.00 riser       0.0864   0.2349    1.7x  3848.50x  命中
-    1.50 tick        0.1265   0.6333    2.6x   164.70x  命中
-    9.00 confirm     0.1289   0.4356    2.6x    36.32x  命中
-    11.50 chime      0.1505   0.4785    3.0x    44.80x  命中
+    0.00 riser       0.0006   0.0022    0.1x    71.00x  命中
+    1.50 tick        0.0266   0.1638    2.8x  1789.00x  命中
+    3.00 tick        0.0226   0.1357    2.4x  1481.67x  命中
+    5.00 type        0.0159   0.0995    1.7x   651.80x  命中
+    6.00 whoosh      0.0100   0.0208    1.0x   227.67x  命中
+    9.00 confirm     0.0242   0.1174    2.5x  1282.67x  命中
+    11.50 chime      0.0604   0.1818    6.3x  1985.33x  命中
 命中 9/9
 
 起音位置检查（±窗口外 60–160ms 的差值应明显小于事件窗口）：
-    1.50 tick      前 0.0017 | 内 0.1547 | 后 0.0366
-    9.00 confirm   前 0.0052 | 内 0.1575 | 后 0.0406
+    0.00 riser     前 0.0000 | 内 0.0004 | 后 0.0043
+    1.50 tick      前 0.0000 | 内 0.0240 | 后 0.0001
+    5.00 type      前 0.0000 | 内 0.0127 | 后 0.0002
+    6.00 whoosh    前 0.0000 | 内 0.0070 | 后 0.0424
 ```
 
-「前 0.002 / 内 0.155 / 后 0.037」这三段的关系是判据：事件前近乎静音，事件内有明显能量，事件后衰减。若三段差不多大，说明音效没在某一点起音，而是铺满了整段。
+「前 0.0000 / 内 0.0240 / 后 0.0001」这三段的关系是判据：事件前完全静音，事件内有明显能量，事件后立刻衰减。若三段差不多大，说明音效没在某一点起音，而是铺满了整段。`6.00 whoosh` 的"后 0.0424"是因为扫风本身有 420 ms 尾巴，属正常。
+
+注意对比基线要在**同一条编码路径**上取：分步混音（先导 MP4 再混）会因为 AAC 二次编码产生 0.0495 的基线差，一条命令版只有 0.0096。基线越干净，判据越灵敏。
 
 ## 边界
 

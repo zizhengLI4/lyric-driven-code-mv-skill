@@ -26,6 +26,25 @@ description: Use when a music video needs code animation that responds to lyric 
 
 自动分析不能升级为 `verified`。逐字时点按句长均分时，字幕说明为视觉填充；BPM 的半速/双速歧义、伴奏起音、拖音及源偏移均可能造成误差。缺少音频时先交付 `illustrative` 分镜或演示，不因无法试听无限等待。状态与授权是两项独立条件，草稿状态不能代替发布许可。
 
+## 画法规范
+
+像素场景按“背景 → 装饰/光晕 → 主体 → 前景遮挡”的顺序绘制。装饰必须先于主体落笔，避免光晕、反光或粒子盖住主体轮廓；在 starter 的 `FB` 中用 `fb.layer({ glow: layer => ..., subject: layer => ... })` 固定该顺序，`fb.glow(x, y, radius, color)` 只绘制底层光晕。画面构图应检查主体占比、整体亮度和单色面积；`scripts/qa.mjs` 会对可分析帧提示主体估算占比低于 0.5%、平均亮度低于 30/255 或单一颜色超过 60%。这些是筛查提示，不能替代抽帧审片。
+
+例如霓虹招牌镜头先铺夜景，再画光晕与招牌主体，最后加前景遮挡。`layer` 的两个回调都会收到同一个 `FB` 实例，先执行 `glow`，再执行 `subject`：
+
+```js
+fb.rect(0, 0, 384, 216, nightSky); // 背景
+fb.layer({
+  glow: layer => layer.glow(258, 72, 32, [255, 62, 164], { alpha: 0.65 }),
+  subject: layer => {
+    layer.rect(231, 52, 54, 38, [28, 26, 42]); // 招牌底板
+    layer.rect(237, 59, 42, 4, [255, 110, 194]); // 招牌字形
+    layer.rect(250, 92, 16, 42, coat); // 主体人物
+  },
+});
+fb.rect(0, 190, 384, 26, foreground); // 前景遮挡
+```
+
 ## 模板与命令
 
 复制 [原创 12 秒分镜](assets/storyboard-example.json) 并替换内容。最小工程见 [starter 说明](assets/templates/starter/README.md)，自带纸船、两岸灯光、尾段转场、高分辨率字幕及本地生成的原创节奏。`export.mjs --storyboard` 读取分镜配置；真实歌曲先更新 `project.audio` 与证据，`--audio` 只能重定位同一素材，按 `scene.id` 调整或注册画法。导出保存实际音轨哈希及来源记录，外部音轨有 `credit` 时生成片尾短署名，发布前仍核对完整署名义务。字幕与音乐状态提示由 JSON 生成。
@@ -38,6 +57,9 @@ node scripts/validate-storyboard.mjs assets/storyboard-example.json
 node scripts/validate-storyboard.mjs path/to/storyboard.json --delivery
 node scripts/visualize-sync.mjs path/to/storyboard.json work/audio-analysis.json --out work/sync-review.svg
 node scripts/qa.mjs assets/templates/starter/frame.mjs --duration 12 --fps 30 --storyboard assets/storyboard-example.json --out work/qa.json
+node scripts/verify-sfx.mjs --audio work/mixed.wav --storyboard work/storyboard.json --window-ms 50 --out work/sfx-evidence.json
+node scripts/lrc.mjs --lrc work/song.lrc --offset 12 --storyboard work/storyboard.json --out work/lyrics.json
+node scripts/new-storyboard.mjs --preset narrative-12 --duration 90 --lyrics work/lyrics.json --out work/storyboard.json
 node assets/templates/starter/export.mjs --storyboard assets/storyboard-example.json --out work/demo.mp4
 node assets/templates/starter/export.mjs --frame-time 5.55 --frame-out work/world-frame.png
 node assets/templates/starter/export.mjs --storyboard path/to/storyboard.json --audio path/to/song.wav --out work/mv.mp4
@@ -54,7 +76,10 @@ python scripts/pixel-font.py --sample work/title-sample.png
 python scripts/minimal-renderer.py path/to/storyboard.json --probe 0 120 300
 node scripts/sfx.mjs --from-storyboard path/to/storyboard.json --out work/sfx.wav --report work/sfx-report.json
 node scripts/sfx.mjs --list
+node assets/templates/starter/export.mjs --storyboard path/to/storyboard.json --audio path/to/song.wav --sfx --out work/mv.mp4
 ```
+
+`scripts/lrc.mjs` 把 LRC 时点按 `--offset` 秒加到片段时钟，逐行推算 `end`；提供 `--storyboard` 时会为跨镜歌词补 `allowSceneSplit` 与原因。`scripts/new-storyboard.mjs` 生成 12 镜待填写骨架，歌词可从 JSON 直接导入。12 个画法资产位于 [assets/scenes](assets/scenes/README.md)，每个工厂都可配置主体取景位置、调色板和镜头时长。`--sfx-script PATH` 可让复制出去的 starter 使用自定义音效模块，不需要改源码；`project.draftMark:false` 可隐藏 draft 提示，状态仍会写进导出资产清单。
 
 `hud-density.mjs` 把切镜、材质、HUD、事件、音效、字幕六类变化摊到时间轴上，报最长空白窗与单镜内部空窗；`--strict` 时有空窗即非零退出。`timeline-sync.py` 从音轨取能量包络并估拍点，与切镜、字幕画进同一张图，标 `speculative` 的 BPM 只能用来发现整段踩错，不能据此宣称同步。`safe-area.py` 叠平台安全区（顶部、底部 8.5%、右侧 6.5%、4:3、9:16），字幕底边与 HUD 都要躲开。`minimal-renderer.py` 是不用 starter 工程也能出画面的最小实现，演示标题牌、数值 HUD 与双语字幕。`sfx.mjs` 合成八种音效（tick/type/click/whoosh/confirm/error/riser/chime），长度严格等于 `project.duration`，供混音使用；两层对齐关系见 [音效层与卡点](references/sfx-and-beat.md)——**画面踩拍点，音效跟画面同帧，音效不踩拍**。
 

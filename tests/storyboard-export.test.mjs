@@ -141,6 +141,13 @@ test('draft自动全时段标识，真实歌曲必须输入音轨，恢复拒绝
   await exporter.prepareFrames(c, () => {});
   const manifest = JSON.parse(await readFile(join(root, 'frames', 'render-config.json'), 'utf8'));
   assert.equal(manifest.frameCount, 16);
+  data.project.draftMark = false; data.project.draftMarkText = '内部草稿提示'; await writeFile(path, JSON.stringify(data));
+  const hiddenDir = join(root, 'frames-with-hidden-draft-mark');
+  const hidden = exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', hiddenDir, '--frames-only']);
+  await exporter.exportVideo(hidden, () => {});
+  const assets = JSON.parse(await readFile(join(hiddenDir, 'asset-manifest.json'), 'utf8'));
+  assert.deepEqual(assets.draftMark, { enabled: false, text: null });
+  assert.doesNotMatch(exporter.createASS(await exporter.loadProject(hidden)), /内部草稿提示|待核对落点/);
   data.lyrics[0].text = '修改后的字幕'; await writeFile(path, JSON.stringify(data));
   const changed = await exporter.loadProject(exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', join(root, 'frames'), '--resume']));
   await assert.rejects(() => exporter.prepareFrames(changed, () => {}), /配置|源码/);

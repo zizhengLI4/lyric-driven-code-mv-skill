@@ -13,6 +13,8 @@ export function createTimeline(data, sceneIds = ['send', 'receive']) {
   if (p.virtualWidth !== 384 || p.virtualHeight !== 216) fail('本模板画法使用384×216虚拟网格');
   if (p.width / 384 !== p.height / 216 || !Number.isInteger(p.width / 384)) fail('输出尺寸须为虚拟网格的同一整数倍');
   if (!text(p.seed) || !finite(p.sourceOffset) || p.sourceOffset < 0) fail('seed须为非空文本，sourceOffset须为非负数');
+  if (p.draftMark !== undefined && typeof p.draftMark !== 'boolean') fail('project.draftMark须为布尔值');
+  if (p.draftMarkText !== undefined && !text(p.draftMarkText)) fail('project.draftMarkText须为非空文本');
   if (!object(p.audio) || !['clip', 'source'].includes(p.audio.timebase) || !text(p.audio.path)) fail('audio.path与audio.timebase缺失');
   if (!object(data.music) || !['illustrative', 'draft', 'verified'].includes(data.music.status)) fail('music.status须为illustrative/draft/verified');
   if (!Array.isArray(data.scenes) || !data.scenes.length) fail('scenes须为非空数组');
@@ -40,6 +42,6 @@ export function createTimeline(data, sceneIds = ['send', 'receive']) {
     return { id: cue.id, start: cue.start, end: Math.min(cue.end, p.duration), zh, en: cue.en ?? '' };
   });
   const status = data.music.status;
-  const notice = status === 'illustrative' ? (text(data.music.presentationNotice) ? data.music.presentationNotice : '演示时点 · 原创合成节奏') : status === 'draft' ? '草稿 · 待核对落点' : '';
+  const notice = status === 'illustrative' ? (text(data.music.presentationNotice) ? data.music.presentationNotice : '演示时点 · 原创合成节奏') : status === 'draft' ? (p.draftMark === false ? '' : (text(p.draftMarkText) ? p.draftMarkText : '草稿 · 待核对落点')) : '';
   return { duration: p.duration, scenes, captions, music: structuredClone(data.music), notice, noticeEnd: status === 'illustrative' ? Math.min(2.2, p.duration) : p.duration };
 }

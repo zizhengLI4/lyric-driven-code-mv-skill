@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 
 import { SFX, SAMPLE_RATE, collectSfx, encodeWav, listSfx, renderSfx, renderTimeline } from '../skills/lyric-driven-code-mv/scripts/sfx.mjs';
@@ -152,4 +155,27 @@ test('示范分镜本身通过校验，且事件时间都落在 0.5s 拍点网�
       assert.ok(demo.music.beats.some((beat) => Math.abs(beat - item.at) < 1e-9), `${scene.id} 的音效 ${item.at}s 不在拍点网格上`);
     }
   }
+});
+
+test('音效混音保持音乐 RMS 不低于原始 RMS 的 90%', async t => {
+  const { requireMediaTools } = await import('./media-tools.mjs');
+  const tools = requireMediaTools(t, ['ffmpeg']); if (!tools) return;
+  const directory = mkdtempSync(join(tmpdir(), 'sfx-rms-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const audioPath = join(directory, 'audio.wav');
+  const source = spawnSync(tools.ffmpeg, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=3', '-filter:a', 'volume=0.35', '-ac', '2', '-c:a', 'pcm_s16le', audioPath], { windowsHide: true });
+  assert.equal(source.status, 0, source.stderr?.toString());
+  const decode = path => {
+    const result = spawnSync(tools.ffmpeg, ['-v', 'error', '-i', path, '-f', 'f32le', '-ac', '1', '-ar', '48000', 'pipe:1'], { windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
+    assert.equal(result.status, 0, result.stderr?.toString());
+    let energy = 0, count = 0;
+    for (let i = 0; i + 4 <= result.stdout.length; i += 4) { const sample = result.stdout.readFloatLE(i); energy += sample * sample; count++; }
+    return Math.sqrt(energy / count);
+  };
+  const originalRms = decode(audioPath);
+  const events = Array.from({ length: 45 }, (_, i) => ({ at: 0.1 + i * 0.064, type: 'click', gain: 0.1 }));
+  const { mixSfx } = await import('../skills/lyric-driven-code-mv/assets/templates/starter/export.mjs');
+  await mixSfx({ ffmpeg: tools.ffmpeg, sfx: events, sfxGain: 0.85, duration: 3 }, directory, () => {});
+  const mixedRms = decode(join(directory, 'audio.wav'));
+  assert.ok(mixedRms >= originalRms * 0.9, `mixed RMS ${mixedRms} must remain >= 90% of source RMS ${originalRms}`);
 });

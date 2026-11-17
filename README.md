@@ -184,11 +184,18 @@ cut-to-beat offset median 250ms, max 500ms, within 80ms: 1/2
 ```
 
 ```powershell
-node skills/lyric-driven-code-mv/scripts/sfx.mjs --from-storyboard work/storyboard.json --out work/sfx.wav --report work/sfx-report.json
-ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1 0.85,alimiter=limit=0.95" -c:v copy -c:a aac -b:a 192k work/final.mp4
+# 一条命令：合成音效轨 → 与音轨混音 → 编码，直接出带音效的成片
+node skills/lyric-driven-code-mv/assets/templates/starter/export.mjs --storyboard work/storyboard.json --audio 你的歌.wav --sfx --out work/final.mp4
 ```
 
-八种音效全是代码合成的（tick / type / click / whoosh / confirm / error / riser / chime），没有采样素材也就没有授权问题。实测 12 秒示范片 9 个事件：音效轨长度严格 12.000000 s，混音后逐事件验证 9/9 命中——事件前 100 ms 差值 0.002，事件窗口内 0.155，事件后 0.037，证明起音确实落在写的那一刻。
+要单独拿一条音效轨（贴进别的剪辑软件），或自己控制混音权重：
+
+```powershell
+node skills/lyric-driven-code-mv/scripts/sfx.mjs --from-storyboard work/storyboard.json --out work/sfx.wav --report work/sfx-report.json
+ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1 0.85:normalize=0,alimiter=limit=0.95" -c:v copy -c:a aac -b:a 192k work/final.mp4
+```
+
+`--sfx` 默认权重 0.85，`--sfx-gain 0.6` 可调；分镜里一个 sfx 都没写时它直接报错，不会悄悄漏掉音效。八种音效全是代码合成的（tick / type / click / whoosh / confirm / error / riser / chime），没有采样素材也就没有授权问题。实测 12 秒示范片 9 个事件：音效轨长度严格 12.000000 s，逐事件对比「只有音乐」与「音乐+音效」9/9 命中——事件前 100 ms 差值 0.0000，事件窗口内 0.024，事件后 0.0001，证明起音确实落在写的那一刻。
 
 **能证明什么、不能证明什么**
 

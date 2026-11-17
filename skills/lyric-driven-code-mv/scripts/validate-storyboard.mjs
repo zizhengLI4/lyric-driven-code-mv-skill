@@ -124,6 +124,8 @@ export function analyzeStoryboard(data, options = {}) {
     }
   }
   text(project.seed, 'project.seed');
+  if (project.draftMark !== undefined && typeof project.draftMark !== 'boolean') fail('project.draftMark', '若提供，必须为布尔值');
+  if (project.draftMarkText !== undefined && !isText(project.draftMarkText)) fail('project.draftMarkText', '若提供，必须为非空字符串');
   const audio = object(project.audio, 'project.audio');
   if (audio) {
     text(audio.path, 'project.audio.path');
@@ -283,6 +285,8 @@ export function analyzeStoryboard(data, options = {}) {
     if (typeof actor.id === 'string') costumesByActor.set(actor.id, costumes);
   });
   const props = uniqueStrings(data.props, 'props');
+  const propCandidates = [...props].sort();
+  const propCandidateText = propCandidates.length ? `；props 白名单候选值：${propCandidates.join('、')}` : '；当前 props 白名单为空';
 
   const sceneIds = new Set();
   const scenes = array(data.scenes, 'scenes');
@@ -400,7 +404,7 @@ export function analyzeStoryboard(data, options = {}) {
     });
     array(scene.props, `${path}.props`).forEach((ref, j) => {
       const refPath = `${path}.props[${j}]`;
-      if (text(ref, refPath) && !props.has(ref)) fail(refPath, `不存在道具 ${ref}`);
+      if (text(ref, refPath) && !props.has(ref)) fail(refPath, `不存在道具 ${ref}${propCandidateText}`);
     });
     let previousEvent = -Infinity;
     array(scene.events, `${path}.events`).forEach((value, j) => {

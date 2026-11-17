@@ -45,6 +45,51 @@ function frameHash(frame) {
   return createHash('sha256').update(`${width}x${height}:`).update(data).digest('hex');
 }
 
+/** Cheap raster heuristics; an explicit subjectMask takes priority over the border-color proxy. */
+export function measureComposition(frame, { subjectMask } = {}) {
+  const { width, height, data } = frame ?? {};
+  if (!Number.isInteger(width) || !Number.isInteger(height) || !(data instanceof Uint8Array || data instanceof Uint8ClampedArray) || data.length !== width * height * 4) {
+    throw new Error('构图分析需要完整 RGBA 帧');
+  }
+  const pixels = width * height, colors = new Map();
+  let luminance = 0, visible = 0;
+  for (let i = 0; i < pixels; i++) {
+    const offset = i * 4;
+    if (data[offset + 3] === 0) continue;
+    visible++;
+    luminance += 0.2126 * data[offset] + 0.7152 * data[offset + 1] + 0.0722 * data[offset + 2];
+    const key = `${data[offset]},${data[offset + 1]},${data[offset + 2]}`;
+    colors.set(key, (colors.get(key) ?? 0) + 1);
+  }
+  const dominantColorFraction = visible ? Math.max(...colors.values()) / visible : 0;
+  let subjectPixels = 0, subjectMethod = 'border-color proxy';
+  if (subjectMask !== undefined) {
+    if (!(subjectMask instanceof Uint8Array || subjectMask instanceof Uint8ClampedArray || Array.isArray(subjectMask)) || subjectMask.length !== pixels) throw new Error('subjectMask 长度须等于 width×height');
+    for (let i = 0; i < pixels; i++) if (subjectMask[i]) subjectPixels++;
+    subjectMethod = 'explicit subject mask';
+  } else if (visible) {
+    const border = new Map();
+    const addBorder = i => {
+      const o = i * 4; if (!data[o + 3]) return;
+      const key = `${data[o]},${data[o + 1]},${data[o + 2]}`; border.set(key, (border.get(key) ?? 0) + 1);
+    };
+    for (let x = 0; x < width; x++) { addBorder(x); addBorder((height - 1) * width + x); }
+    for (let y = 1; y < height - 1; y++) { addBorder(y * width); addBorder(y * width + width - 1); }
+    const background = [...border].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const backgroundRgb = background?.split(',').map(Number);
+    for (let i = 0; i < pixels; i++) {
+      const o = i * 4;
+      if (data[o + 3] && (data[o] !== backgroundRgb?.[0] || data[o + 1] !== backgroundRgb?.[1] || data[o + 2] !== backgroundRgb?.[2])) subjectPixels++;
+    }
+  }
+  const subjectFraction = visible ? subjectPixels / visible : 0, meanLuminance = visible ? luminance / visible : 0;
+  const warnings = [];
+  if (subjectFraction < 0.005) warnings.push(`主体像素估算占比 ${(subjectFraction * 100).toFixed(3)}% 低于 0.5%（${subjectMethod}）`);
+  if (meanLuminance < 30) warnings.push(`整帧平均亮度 ${meanLuminance.toFixed(1)} 低于 30/255`);
+  if (dominantColorFraction > 0.6) warnings.push(`单一颜色占比 ${(dominantColorFraction * 100).toFixed(1)}% 高于 60%`);
+  return { subjectFraction, subjectMethod, meanLuminance, dominantColorFraction, warnings };
+}
+
 function shuffled(values) {
   const copy = [...values];
   let seed = 0x6c797269;
@@ -65,7 +110,7 @@ function preserveCleanupError(error, cleanupError) {
   }
 }
 
-export async function runDeterminismQA(renderFrame, { times, frameOptions = {}, warmupFrames = 0, teardown, onWarning } = {}) {
+export async function runDeterminismQA(renderFrame, { times, frameOptions = {}, warmupFrames = 0, teardown, onWarning, subjectMaskAt } = {}) {
   if (teardown !== undefined && typeof teardown !== 'function') throw new Error('teardown 必须为函数');
   let failed = false;
   let operationError;
@@ -81,14 +126,24 @@ export async function runDeterminismQA(renderFrame, { times, frameOptions = {}, 
     const failures = [];
     const warmupHashes = new Map();
     const warnings = [];
+    const compositionByTime = new Map();
     let renderCount = 0;
-    const renderHash = async time => {
+    const renderHash = async (time, captureComposition = false) => {
       // 预热与正式检查使用同一 profile，立即哈希以兼容复用缓冲。
       const frame = await renderFrame(time, frameOptions);
       const hash = frameHash(frame);
       if (!warnings.length && frame.width * frame.height > 1e6) {
         const warning = `RGBA帧为${frame.width}×${frame.height}，每帧${frame.data.length}字节；大量浏览器传输可能耗尽资源。优先检查低分辨率世界层，再单独检查正式分辨率的字幕/合成层；缩小尺寸的QA不能证明正式尺寸一致。`;
         warnings.push(warning); onWarning?.(warning);
+      }
+      if (captureComposition && frame.width * frame.height >= 4096 && frame.width * frame.height <= 1e6) {
+        const mask = subjectMaskAt ? await subjectMaskAt(time, frame, frameOptions) : frame.subjectMask;
+        const composition = measureComposition(frame, { subjectMask: mask });
+        compositionByTime.set(time, composition);
+        for (const warning of composition.warnings) {
+          const full = `构图提示 t=${time.toFixed(3)}s：${warning}`;
+          if (!warnings.includes(full)) { warnings.push(full); onWarning?.(full); }
+        }
       }
       renderCount++;
       return hash;
@@ -106,7 +161,7 @@ export async function runDeterminismQA(renderFrame, { times, frameOptions = {}, 
     ];
     for (const [order, sequence] of orders) {
       for (const time of sequence) {
-        const actualHash = await renderHash(time);
+        const actualHash = await renderHash(time, order === 'forward');
         if (order === 'forward') baseline.set(time, actualHash);
         else if (baseline.get(time) !== actualHash) failures.push({ time, order, expectedHash: baseline.get(time), actualHash });
       }
@@ -122,7 +177,7 @@ export async function runDeterminismQA(renderFrame, { times, frameOptions = {}, 
       warmupStatus: !warmupFrames ? 'disabled' : warmupMismatch.length ? 'mismatch' : 'stable',
       warmupMismatch, renderProfile: frameOptions,
       orders: orders.map(([name]) => name),
-      frames: ordered.map(time => ({ time, sha256: baseline.get(time) })),
+      frames: ordered.map(time => ({ time, sha256: baseline.get(time), ...(compositionByTime.has(time) ? { composition: compositionByTime.get(time) } : {}) })),
       failures, warnings,
       limitation: '仅证明所抽样时间在本次渲染环境中的像素一致性；预热差异单独记录，不证明歌词对齐、授权或成片观感。'
     };
@@ -171,7 +226,7 @@ async function main(args) {
     if (times.some(t => t >= duration)) throw new Error('检查时间必须位于 [0,duration)');
     const frameOptions = storyboard && module.frameOptionsForStoryboard ? await module.frameOptionsForStoryboard(storyboard) : {};
     // CLI 在整个操作结束后清理；不把 cleanup 再传给 runDeterminismQA。
-    const report = await runDeterminismQA(module.renderFrame, { times, frameOptions, warmupFrames: Number(opts['--warmup-frames'] ?? 3), onWarning: warning => console.error(`资源提示：${warning}`) });
+    const report = await runDeterminismQA(module.renderFrame, { times, frameOptions, warmupFrames: Number(opts['--warmup-frames'] ?? 3), subjectMaskAt: module.subjectMaskAt, onWarning: warning => console.error(`资源提示：${warning}`) });
     report.module = resolve(modulePath);
     report.duration = duration;
     report.fps = fps;

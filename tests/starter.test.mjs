@@ -116,6 +116,12 @@ test('导出CLI校验配置，并给出易读的失败退出码', async () => {
   assert.throws(() => parseArgs(['--width', '641']), /尺寸|width/);
   assert.throws(() => parseArgs(['--resume']), /frames-dir/);
   assert.throws(() => parseArgs(['--unknown']), /未知/);
+  assert.throws(() => parseArgs(['--sfx']), /storyboard/);
+  assert.throws(() => parseArgs(['--sfx-gain', '2.5', '--storyboard', 'x.json']), /sfx-gain/);
+  assert.throws(() => parseArgs(['--sfx-gain', 'NaN', '--storyboard', 'x.json']), /sfx-gain/);
+  assert.equal(parseArgs(['--sfx', '--storyboard', 'x.json']).sfx, true);
+  assert.equal(parseArgs(['--sfx', '--storyboard', 'x.json']).sfxGain, 0.85);
+  assert.equal(parseArgs(['--sfx-gain', '0.6', '--storyboard', 'x.json']).sfxGain, 0.6);
   assert.equal(parseArgs(['--ffmpeg', './tools/ffmpeg.exe']).ffmpeg, resolve('./tools/ffmpeg.exe'));
   const cli = fileURLToPath(new URL('export.mjs', base));
   const run = args => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 15000 });

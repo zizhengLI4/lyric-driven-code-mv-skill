@@ -49,6 +49,36 @@ node scripts/analyze-audio.mjs "song.mp3" --bpm 110 --bpm-source metadata --bpm-
 | [Internet Archive](https://archive.org/) | 核对上传者、曲目页和来源证据；上传站点本身不证明权利。可按其 [Metadata API](https://blog.archive.org/2013/07/04/metadata-api/) 获取条目元数据与文件列表，再核对许可 |
 | 原创或用户授权文件 | 记录作者、具体使用范围和授权依据；用户拥有文件不自动表示拥有全部发布权利 |
 
+### 直链下载、格式转换与分镜记录
+
+仅在曲目页明确提供可下载文件或许可授权直接下载时，使用页面给出的文件 URL；不要从播放器地址猜隐藏 CDN 链接。保留原始下载文件、曲目页、许可页及下载日期，核对版本和时长。若站点只提供网页下载按钮，使用该官方入口，并遵守站点条款。
+
+```sh
+# URL 必须来自实际曲目页，保存为原始下载件并复核文件名/内容
+curl -fL --output work/source-track.flac "https://example.org/path/from-the-track-page.flac"
+# 转成 starter 可稳定处理的 WAV；原件仍保留作为来源记录
+ffmpeg -v error -i work/source-track.flac -vn -ar 48000 -ac 2 -c:a pcm_s16le work/track.wav
+```
+
+`example.org` 是占位域名，必须替换为已核对的实际 URL。Internet Archive 可先从 `https://archive.org/metadata/{identifier}` 读取 `files[].name`，再 URL 编码文件名并下载；不要猜文件名、忽略访问限制或绕过登录/付费墙。检查 `ffprobe -v error -show_format -show_streams work/track.wav`，确认时长与音频流。
+
+在分镜 `project.audio` 中记录素材路径、时间基准、许可名称、作者署名、曲目来源页、许可原文链接和实际用途：
+
+```json
+{
+  "path": "assets/track.wav",
+  "timebase": "source",
+  "provenance": "licensed-download",
+  "license": "以实际曲目许可名称为准",
+  "credit": "曲目标题 — 作者",
+  "url": "https://实际曲目页面",
+  "licenseUrl": "https://实际许可正文",
+  "use": "internal-preview"
+}
+```
+
+`credit` 写足实际许可要求的标题、作者及链接/修改说明；`license` 使用曲目页面列出的具体许可，不写泛化的“免版权”或“免费”。将内部预览改为公开/商业用途前，复核该用途是否获准，并更新 `use`。starter 会把这些声明写入 `.assets.json`，但不会自动验证许可有效性。
+
 不要维护未经验证的固定音频直链或假设整站统一许可。Internet Archive 公开元数据入口为 `https://archive.org/metadata/{identifier}`，文件入口为 `https://archive.org/download/{identifier}/{filename}`；用实际元数据提供的文件名并做 URL 编码，不能猜测文件。其他站点优先使用当前官方页面的下载入口，不臆造 API。
 
 截至 2026-11-17，[FreePD 原站](https://freepd.com/)显示已关闭，不能再当作稳定音源推荐。寻找其旧曲目的替代页面时仍要核对具体文件与许可。

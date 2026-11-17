@@ -48,7 +48,13 @@ const { width, height, data } = renderFrame(5.55);
 const fb = new FB().setCam(192, 108, 1);
 fb.rect(-192, -108, 768, 432, [19, 30, 51]);
 // X(x)、Y(y) 及 rect/line/circle/poly 共享世界→屏幕整数取整。
+fb.layer({
+  glow: layer => layer.glow(192, 108, 24, [255, 206, 130]),
+  subject: layer => layer.circle(192, 108, 8, [255, 239, 190]),
+});
 ```
+
+`FB.layer` 总是先画 `glow`/`underlay`，再画 `subject`/`body`，因此光晕不会盖住主体；其他反光和粒子也应在主体前绘制。`FB.glow(x,y,radius,color,{steps,alpha})` 返回同一个 FB，可与 `layer` 一起复用。
 
 `renderFrame(t)` 仅由绝对秒数、显式 seed 与可选配置决定。每帧重新建立缓冲；随机量按 seed+索引计算，不使用累积 PRNG、帧间缓存、`Date.now()` 或“上一帧状态”。乱序 seek 与先后渲染必须得到相同 RGBA。导出取 `i/fps`，`i=0..359`；`t=12` 只供预览保持最终状态，不额外导出一帧。负时间裁到 0，超出结尾裁到 12，NaN/Infinity 拒绝。
 
@@ -67,17 +73,33 @@ node export.mjs --storyboard C:\你的工程\storyboard.json --audio C:\你的�
 node export.mjs --storyboard C:\你的工程\storyboard.json --audio C:\你的素材\song.wav --preview
 ```
 
+`--sfx` 把分镜里的 `project.sfx[]` 与 `scene.sfx[]` 合成一条音效轨，按 `--sfx-gain`（默认 0.85）与音轨混在一起，一次导出直接得到带音效的成片：
+
+```powershell
+node export.mjs --storyboard C:\你的工程\storyboard.json --audio C:\你的素材\song.wav --sfx --out C:\你的输出\song-mv.mp4
+```
+
+音效由 skill 目录的 `scripts/sfx.mjs` 实时合成（八种，无外部素材），混音结果覆盖内部 `audio.wav`，所以 `.mp4.assets.json` 记录的哈希是最终音轨。分镜里没有任何 sfx 时 `--sfx` 直接报错，不会悄悄导出一条没有音效的片子。把 starter 单独复制到别处时可用 `--sfx-script C:\你的工程\sfx.mjs` 指定模块；模块需要导出 `collectSfx`、`renderTimeline` 和 `encodeWav`，缺失或不兼容时会指出检查路径和必需导出。两层对齐关系（画面踩拍点、音效跟画面）见 [音效层与卡点](../../../references/sfx-and-beat.md)。
+
+45 个事件的导出音轨可用 `scripts/verify-sfx.mjs` 按50ms RMS包络逐个核对起音；提供混音音轨和分镜，会输出全量命中表及 JSON 证据：
+
+```powershell
+node ..\..\..\scripts\verify-sfx.mjs --audio C:\你的工程\mixed.wav --storyboard C:\你的工程\storyboard.json --window-ms 50 --out C:\你的工程\sfx-evidence.json
+```
+
 `project.audio.path` 相对于 JSON 所在目录。`--audio` 仅用于重定位同一素材：它与声明路径一致，或与仍可读取的声明文件SHA-256相同，或匹配预先记录的 `project.audio.sha256`。原路径已失效又没有哈希时会拒绝覆盖；先核对素材并更新JSON。换歌须同时更新路径、来源、许可、署名与音乐证据，不能把原创模板记录套到另一首歌上。
 
-`audio.timebase=source` 时从 `project.sourceOffset` 截取 `project.duration` 秒，`clip` 时从音轨0秒截取。源音轨长度不足直接失败。`illustrative` 使用模板原创合成节奏并拒绝显式音轨；真实音轨请改为 `draft/verified`，缺文件不能回退到演示音乐。`illustrative` 自动显示演示提示；`draft` 全时段显示“草稿 · 待核对落点”；`verified` 按分镜提供的证据记录核对结果。
+`audio.timebase=source` 时从 `project.sourceOffset` 截取 `project.duration` 秒，`clip` 时从音轨0秒截取。源音轨长度不足直接失败。`illustrative` 使用模板原创合成节奏并拒绝显式音轨；真实音轨请改为 `draft/verified`，缺文件不能回退到演示音乐。`illustrative` 自动显示演示提示；`draft` 默认全时段显示“草稿 · 待核对落点”，可在 `project.draftMarkText` 更改文案或设 `project.draftMark:false` 隐藏。实际音乐状态仍记录在 `.mp4.assets.json`；`verified` 按分镜提供的证据记录核对结果。
 
 每次MP4导出生成同路径 `.mp4.assets.json`，保存声明的来源/许可、实际音轨与裁剪WAV哈希、裁切起点、分镜及输出哈希。帧目录另保留 `asset-manifest.json`。外部非 `original` 音轨有 `credit` 时，在最后最多4秒烧入“音乐：署名｜许可”短署名；完整来源、许可链接与修改说明保留在记录中，按具体许可补到发布说明或片尾并检查可读性。记录完整和哈希相同都不证明许可有效。
 
 `SCENE_RENDERERS[scene.id]` 是唯一画法注册表，内置 `send` 与 `receive`。两个内置演出按镜头局部时长归一化，换镜头时窗会改变实际动作节奏；事件中的文字描述仍需由对应画法实现，新 ID 缺画法会失败。JSON 能调整演出时间，不能自动产生新人物动作。完整分镜仍先用 `validate-storyboard.mjs --delivery` 校验叙事、事件、授权与音乐证据；导出另用自包含 `timeline.mjs` 校验实际可执行字段，复制模板后也能独立运行。
 
+本 skill 中另有 [12 个场景资产](../../scenes/README.md)，为 `window/leave/empty/turn/neon/street/shatter/lesson/night/dawn/path/lookback` 分别提供画法工厂；每个都可传入 `duration`、主体取景位置 `subject:{x,y}` 和颜色名到 RGB 的 `palette` 覆盖。`scripts/lrc.mjs --lrc song.lrc --offset 12 --storyboard storyboard.json` 会转换成 `lyrics[]`，推算结束时点，并为跨镜歌词生成 `allowSceneSplit`；`scripts/new-storyboard.mjs --preset narrative-12 --duration 90 --lyrics lyrics.json` 生成可填写的12镜骨架。
+
 starter 当前实现通用分镜规范的执行子集：末镜仅支持 `exit:{type:"cut",dur:0}`。通用规范允许的末镜 `target:"background"` 转场需由现有框架或自定义渲染适配实现；通用分镜校验通过后，仍需满足 starter 的执行范围。
 
-预览和导出读取同一份已加载 JSON；修改文件后重启预览。`qa.mjs --storyboard` 会调用模块的 `frameOptionsForStoryboard(data)`，将同一时间线与 seed 传入像素检查；已有浏览器适配器可导出这个可选钩子。恢复指纹含 JSON、音频内容、sourceOffset 和源码，修改任何一项须使用新帧目录。`FFMPEG_PATH` / `FFPROBE_PATH` 可配置已有工具路径。
+预览和导出读取同一份已加载 JSON；修改文件后重启预览。`qa.mjs --storyboard` 会调用模块的 `frameOptionsForStoryboard(data)`，将同一时间线与 seed 传入像素检查；另对实际尺寸不少于4096像素的抽样帧检查主体估算占比低于0.5%、平均亮度低于30/255、单色超过60%，提供 `subjectMaskAt()` 的模块可更精确测主体。提示用于筛查构图，不代替人工抽帧。恢复指纹含 JSON、音频内容、sourceOffset 和源码，修改任何一项须使用新帧目录。`FFMPEG_PATH` / `FFPROBE_PATH` 可配置已有工具路径。
 
 ## 两镜与转场
 
