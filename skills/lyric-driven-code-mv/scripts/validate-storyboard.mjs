@@ -120,6 +120,19 @@ export function analyzeStoryboard(data, options = {}) {
     }
   }
 
+  // Optional narrative structure. These fields are descriptive and remain
+  // compatible with older storyboards; renderers may choose how to present them.
+  if (data.device !== undefined) {
+    const device = object(data.device, 'device');
+    if (device) {
+      text(device.id, 'device.id');
+      text(device.name, 'device.name');
+      text(device.purpose, 'device.purpose');
+      const deviceTypes = ['chat', 'game-system', 'timeline', 'counter', 'chapter-card', 'viewfinder', 'material-stage', 'custom'];
+      if (!deviceTypes.includes(device.type)) fail('device.type', `必须为 ${deviceTypes.join('、')} 之一`);
+    }
+  }
+
   // sourceOffset is metadata: interval checks always use the unshifted clip clock.
   const duration = project.duration;
   const validDuration = typeof duration === 'number' && Number.isFinite(duration) && duration > 0;
@@ -134,6 +147,32 @@ export function analyzeStoryboard(data, options = {}) {
     if (endValid && validDuration && entry.end > duration + EPSILON) fail(`${path}.end`, '不得超过成片 duration（舍入容差1e-6秒）');
     if (startValid && endValid && entry.start >= entry.end) fail(path, '必须满足 start < end');
   };
+
+  if (data.chapters !== undefined) {
+    const chapterIds = new Set();
+    let previousChapter = null;
+    array(data.chapters, 'chapters').forEach((value, i) => {
+      const path = `chapters[${i}]`;
+      const chapter = object(value, path);
+      if (!chapter) return;
+      id(chapter.id, `${path}.id`, chapterIds);
+      interval(chapter, path);
+      text(chapter.title, `${path}.title`);
+      text(chapter.meaning, `${path}.meaning`);
+      if (Number.isFinite(chapter.start)) {
+        if (i === 0 && Math.abs(chapter.start) > EPSILON) fail(path, '第一个章节必须从 0 开始');
+        if (previousChapter && Math.abs(chapter.start - previousChapter.end) > EPSILON) {
+          fail(path, '章节之间不得有空洞或重叠（容差 1e-6 秒）');
+        }
+      }
+      previousChapter = chapter;
+    });
+    const chapters = Array.isArray(data.chapters) ? data.chapters : [];
+    const last = chapters[chapters.length - 1];
+    if (chapters.length > 0 && isObject(last) && Number.isFinite(last.end) && validDuration && Math.abs(last.end - duration) > EPSILON) {
+      fail('chapters', '最后一个章节必须结束于 duration');
+    }
+  }
 
   const lyricIds = new Set();
   const lyricsById = new Map();
@@ -230,6 +269,33 @@ export function analyzeStoryboard(data, options = {}) {
     const hasSceneInterval = validInterval(scene);
     for (const key of ['meaning', 'location', 'objective', 'action', 'feedback', 'outcome']) {
       text(scene[key], `${path}.${key}`);
+    }
+    if (scene.materialVariant !== undefined) {
+      const variant = object(scene.materialVariant, `${path}.materialVariant`);
+      if (variant) {
+        text(variant.id, `${path}.materialVariant.id`);
+        text(variant.label, `${path}.materialVariant.label`);
+        text(variant.change, `${path}.materialVariant.change`);
+      }
+    }
+    if (scene.hud !== undefined) {
+      const hudIds = new Set();
+      const hudTypes = ['counter', 'bar', 'heart', 'status', 'clock', 'badge', 'log', 'checklist', 'axis', 'level', 'score', 'banner'];
+      array(scene.hud, `${path}.hud`).forEach((value, j) => {
+        const hudPath = `${path}.hud[${j}]`;
+        const hud = object(value, hudPath);
+        if (!hud) return;
+        id(hud.id, `${hudPath}.id`, hudIds);
+        text(hud.label, `${hudPath}.label`);
+        text(hud.meaning ?? hud.semantic, `${hudPath}.meaning`);
+        if (!hudTypes.includes(hud.type)) fail(`${hudPath}.type`, `必须为 ${hudTypes.join('、')} 之一`);
+        if (hud.type === 'bar') {
+          finite(hud.value, `${hudPath}.value`);
+          finite(hud.min, `${hudPath}.min`);
+          finite(hud.max, `${hudPath}.max`);
+          if (isFiniteNumber(hud.min) && isFiniteNumber(hud.max) && hud.min >= hud.max) fail(hudPath, 'bar 的 min 必须小于 max');
+        }
+      });
     }
     if (scene.exit === undefined || scene.exitTransition !== undefined) text(scene.exitTransition, `${path}.exitTransition`);
     if (scene.exit !== undefined) {

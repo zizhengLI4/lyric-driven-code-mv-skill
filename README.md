@@ -88,7 +88,9 @@
 - **两种导出方式**：管道直出适合快速验证；PNG 落盘与恢复适合保留渲染进度。
 - **画面验收**：通过接触表查看整体叙事，再检查每镜和转场的关键帧。
 
-内置模板使用已有 Node.js、FFmpeg 与 FFprobe。HTML/Canvas/SVG 工程可按需要使用，HTML 动效路线可选择 HyperFrames，React 工程可选择 Remotion；其他框架的依赖由 AI 根据现有环境和你的选择配置。
+内置模板使用已有 Node.js、FFmpeg 与 FFprobe。HTML/Canvas/SVG 工程可按需要使用，HTML 动效路线可选择 HyperFrames，React 工程可选择 Remotion；其他框架的依赖由 AI 根据现有环境和你的选择配置。设计分镜时先选承载叙事的装置（聊天、游戏系统、时间轴、章节牌或材质舞台），再拆场景；可用 `chapters`、`scene.hud` 和 `materialVariant` 记录章节、情绪数值与同构图变奏。镜头不设固定秒数上限，按信息密度安排，建议每 8–12 秒有一次可读变化。
+
+细化装置、HUD、字幕和参考片证据时，按需阅读 [装置与章节](skills/lyric-driven-code-mv/references/story-devices.md)、[HUD 与字幕](skills/lyric-driven-code-mv/references/hud-and-subtitles.md)、[渲染故障预防](skills/lyric-driven-code-mv/references/render-pitfalls.md) 与 [参考片取证](skills/lyric-driven-code-mv/references/reference-film-analysis.md)。这些资料把画面观察、可复现测量和技术推断分开记录。
 
 ## 从零到成片
 

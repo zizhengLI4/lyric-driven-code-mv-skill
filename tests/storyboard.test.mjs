@@ -651,6 +651,7 @@ test('malformed optional records and invalid timing inputs never crash analyzer 
     d => { d.project.audio.license = { valueOf: null, toString: null }; },
     d => { d.scenes[0].events[0] = null; },
     d => { d.scenes[0].events[0].lyricIds = [null, {}]; },
+    d => { d.chapters = null; },
   ].map(mutate => { const data = validStoryboard(); mutate(data); return data; })];
   for (const data of cases) {
     const result = analyzeStoryboard(data, { delivery: true });
@@ -700,4 +701,39 @@ test('CLI rejects unknown options and still validates the number of paths', () =
     assert.equal(result.status, 1);
     assert.match(result.stderr, /用法|usage/i);
   }
+});
+
+test('accepts optional story devices, contiguous chapters, material variants and semantic HUD entries', () => {
+  const data = validStoryboard();
+  data.device = {
+    id: 'save-console', type: 'game-system', name: '存档系统',
+    purpose: '把关系状态呈现为可操作界面',
+  };
+  data.chapters = [
+    { id: 'chapter-1', start: 0, end: 6, title: '第一次发送', meaning: '主动靠近' },
+    { id: 'chapter-2', start: 6, end: 12, title: '收到回光', meaning: '关系留下回应' },
+  ];
+  data.scenes[0].materialVariant = {
+    id: 'winter', label: '冬季材质', change: '雪材质替换，机位保持不变',
+  };
+  data.scenes[0].hud = [
+    { id: 'mood', type: 'bar', label: '心情', value: 56, min: 0, max: 100, meaning: '行动后的情绪反馈' },
+    { id: 'save-status', type: 'status', label: '存档', value: '已保存', meaning: '任务结果已写入系统' },
+  ];
+  assert.deepEqual(validateStoryboard(data), []);
+});
+
+test('rejects invalid chapter coverage, unknown device types and HUDs without semantic meaning', () => {
+  const data = validStoryboard();
+  data.device = { id: 'x', type: 'unknown-device', name: '装置', purpose: '用途' };
+  data.chapters = [
+    { id: 'a', start: 0, end: 7, title: 'A', meaning: '一' },
+    { id: 'a', start: 6, end: 12, title: 'B', meaning: '二' },
+  ];
+  data.scenes[0].hud = [{ id: 'count', type: 'counter', label: '次数', value: 2 }];
+  const errors = validateStoryboard(data);
+  assert.ok(errors.some(message => /device\.type/.test(message)));
+  assert.ok(errors.some(message => /chapters\[1\]\.id/.test(message)));
+  assert.ok(errors.some(message => /chapters.*不得有空洞或重叠/.test(message)));
+  assert.ok(errors.some(message => /scenes\[0\]\.hud\[0\]\.meaning/.test(message)));
 });
