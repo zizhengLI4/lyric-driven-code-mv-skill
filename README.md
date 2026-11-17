@@ -90,6 +90,10 @@
 
 内置模板使用已有 Node.js、FFmpeg 与 FFprobe。HTML/Canvas/SVG 工程可按需要使用，HTML 动效路线可选择 HyperFrames，React 工程可选择 Remotion；其他框架的依赖由 AI 根据现有环境和你的选择配置。
 
+## 从零到成片
+
+第一次用、又不打算让 AI 代劳的，读 [GETTING-STARTED.md](GETTING-STARTED.md)：它把装依赖、装 skill、跑通 12 秒、单帧排错、接入自己的歌、离线找拍点、三档校验、断点续渲和验收串成一条可以直接照抄的路径，每一步都给出实测输出和出错处理。文中所有耗时、帧数、BPM 与偏差毫秒均为真实运行结果。
+
 ## 安装
 
 复制整个 `skills/lyric-driven-code-mv` 目录到 Codex 的 skills 目录，模板与脚本都随安装保留。Windows 可用：
