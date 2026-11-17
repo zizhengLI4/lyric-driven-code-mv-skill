@@ -8,7 +8,7 @@
 > 本文每条命令都在 Windows PowerShell + Node v24.16 + ffmpeg 9.0.2 实测跑过。
 > 文中所有耗时、帧数、BPM、偏差毫秒都是真实运行结果，不是示意值。
 >
-> 这份文档只做一件事：把散在 README、`SKILL.md`、三份 `references/` 和 starter README
+> 这份文档只做一件事：把散在 README、`SKILL.md`、参考文档和 starter README
 > 里的东西，按"新手第一次要动手的顺序"串成一条路，并把每一步的**期望输出**和**常见失败**写清楚。
 
 ---
@@ -629,7 +629,7 @@ my-mv/
 
 ## 附：从 12 秒做到整首
 
-1. **一镜 4–8 秒**，超过 8 秒观众会走神。
+1. **镜长由信息密度决定**，不设固定上限；建议每 8–12 秒至少出现一次可读变化（字幕、HUD、光线、材质、粒子或状态）。等待和留白是结果时，可以保留长镜头。装置、章节牌和 HUD 字段见 [装置与章节](skills/lyric-driven-code-mv/references/story-devices.md) 与 [HUD 与字幕](skills/lyric-driven-code-mv/references/hud-and-subtitles.md)。
 2. **先把分镜写满全程再渲**，不要边渲边加——时间一改，`lyrics`/`beats`/`events` 全要重算
    （校验器会用几十条错误提醒你漏改了什么）。
 3. **每次只改一处**，改完用 `--frame-time` 看单帧，或 `--width 640 --height 360 --fps 10` 快跑。
