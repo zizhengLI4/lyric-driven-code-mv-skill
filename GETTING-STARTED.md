@@ -420,6 +420,44 @@ deltaSeconds = 你的起点 − 最近的机器候选拍点
 `status: "candidate-review"` 只描述这张图的性质，**不是音乐校对等级**，
 也不会把 `draft` 升级成 `verified`。
 
+### 6.4 把拍点锁进分镜（80 ms 容差）
+
+分析出的 `beats` 要写进分镜的 `music.beats`，校验器才有网格可比。一条命令搬过去：
+
+```powershell
+node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync('work/analysis.json','utf8'));const s=JSON.parse(fs.readFileSync('work/sb-real.json','utf8'));s.music.beats=a.beats;fs.writeFileSync('work/sb-real.json',JSON.stringify(s,null,2));console.log('written',a.beats.length,'beats')"
+```
+
+实测（24 个候选拍点写进一份 `duration: 12` 的分镜）：
+
+```
+written 24 beats; first 0.000484 last 11.500484; duration 12
+```
+
+然后把**必须在拍上发生**的动作标 `"sync": "beat"`：
+
+```json
+"events": [
+  { "at": 5.501, "action": "灯亮的一瞬落在拍上", "sync": "beat" },
+  { "at": 5.63,  "action": "这一下晚 130ms，会被抓出来", "sync": "beat" }
+]
+```
+
+再跑校验：
+
+```
+警告：scenes[0].events[4].at: sync:"beat" 偏离最近节拍 5.500484 秒：offsetMs=129.516；容差 80 ms
+分镜校验通过。          ← 退出码 0
+```
+
+`--strict` 下同一条警告会让退出码变成 1。容差改法：`project.settings.beatToleranceMs`。
+
+三条硬规则，踩过就白跑：
+
+- `music.beats` 必须**严格递增**，且每个点都在 `[0, duration)` 内。把 `duration` 从 12 改成 10 却不删末尾拍点，校验器会按 `music.beats[i]: 必须位于 [0, duration)` 报错。
+- 只有标了 `sync:"beat"` 的动作受 80 ms 约束。**别给所有动作都标**——末句余韵、留白、走位本来就该偏离网格，标了只会制造假警告。
+- `deltaMs` 为负是早于拍点，为正是晚于拍点。偏移量本身不判断好坏，判断的是你有没有意识到它偏了。
+
 ---
 
 ## 7. 三档校验
@@ -464,7 +502,7 @@ scenes[1].events[0].at: 事件必须位于成片 [0,duration)
 
 这是新版最值得信任的地方：**改时长漏改内容，根本进不到渲染那一步。**
 
-> 校验通过 ≠ 片子能看。它审核结构，不审核故事好不好、拍点对不对、字幕读不读得出来。
+> 校验通过 ≠ 片子能看。它审结构，也审标了 `sync:"beat"` 的动作偏离网格多少毫秒（见 [6.4](#64-把拍点锁进分镜80-ms-容差)）；但它不审故事好不好、某段走位**该不该**卡在拍上、字幕读不读得出来。
 
 ---
 
@@ -511,6 +549,12 @@ ffmpeg -v error -y -i outputs/my-mv.mp4 -vf "fps=2" work/check/s_%03d.png
 # 4) 关键位置单帧：转场边界与末帧
 ffmpeg -v error -y -ss 5.55 -i outputs/my-mv.mp4 -frames:v 1 work/check/transition.png
 ffmpeg -v error -y -ss 11.9 -i outputs/my-mv.mp4 -frames:v 1 work/check/ending.png
+
+# 5) 可读变化密度：最长空窗超过 12 秒就该补变化，别加镜头
+node skills/lyric-driven-code-mv/scripts/hud-density.mjs work/sb-real.json --max-gap 12
+
+# 6) 平台安全区：字幕底边与 HUD 关键读数必须躲开参考线
+python skills/lyric-driven-code-mv/scripts/safe-area.py --video outputs/my-mv.mp4 --at 3 10 -o work/safe-check.png
 ```
 
 **期望的流参数（实测）：**
@@ -528,6 +572,8 @@ duration=12.000000
 ```
 
 `pix_fmt=yuv420p` 必须对，否则很多播放器和平台放不出来。
+
+第 5 条实测在 12 秒示例上的输出：`可读变化点 14 个（每分钟 70 个）/ 最长空窗 2.3s（阈值 12s）`——它按切镜、材质、HUD、事件、字幕五类变化算，报的是"观众多久没看到新东西"。第 6 条出一张叠了顶部、底部 8.5%、右侧 6.5%、4:3、9:16 五条参考线的图，用眼睛确认字幕底边和 HUD 没压进去；这两条查完，再去看下面三件人眼的事。
 
 **然后做三件机器查不出来的事：**
 
