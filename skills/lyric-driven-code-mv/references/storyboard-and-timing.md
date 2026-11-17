@@ -69,7 +69,7 @@ starter 还包含一层演出缩放：JSON 路线在调用 `SCENE_RENDERERS[scen
 | `project` | `fps,duration,sourceOffset,width,height,virtualWidth,virtualHeight,seed,audio` |
 | `project.audio` | `path,timebase,provenance?,license,credit,url?,licenseUrl?,use`，授权说明见音频参考 |
 | `device?` | `{id,type,name,purpose}`；先描述承载叙事的界面、系统、时间轴、视角或材质舞台，再决定场景画法 |
-| `chapters?` | 连续覆盖 `[0,duration)` 的 `{id,start,end,title,meaning}`；用于标题牌、章节牌或关系阶段，不替代 `scenes[]` |
+| `chapters?` | 至少一个且连续覆盖 `[0,duration)` 的 `{id,start,end,title,meaning}`；用于标题牌、章节牌或关系阶段，不替代 `scenes[]` |
 | `lyrics[]` | `id,start,end,text`，可加 `zh,en`；有意跨镜可加 `allowSceneSplit:true,splitReason` |
 | `music` | `status,beats[],sections[]:{id,start,end},evidence?,presentationNotice?,pendingChecks?` |
 | `music.evidence` | `method,limitations,reviewer?,reviewedAt?`；最后两项用于人工核对 |
@@ -77,7 +77,7 @@ starter 还包含一层演出缩放：JSON 路线在调用 `SCENE_RENDERERS[scen
 | `actors[]`、`props[]` | 稳定人物 ID 与 `costumes[]`；道具 ID 列表 |
 | `scenes[]` | `id,start,end,meaning,location,objective,action,feedback,outcome,lyricIds,actors,props,events,exit,materialVariant?,hud?` |
 | `scene.materialVariant` | `{id,label,change}`；同构图换季节、材质或年代时记录可见变化，画法仍需自行实现 |
-| `scene.hud[]` | `{id,type,label,value?,min?,max?,meaning}`；类型可为 `counter/bar/heart/status/clock/badge/log/checklist/axis/level/score/banner`，负值、归零、损坏和失败均可作为语义结果 |
+| `scene.hud[]` | `{id,type,label,value?,min?,max?,meaning}`；`value` 若提供为非空字符串或有限数，`bar` 要求数值落在 `min..max` 内；类型可为 `counter/bar/heart/status/clock/badge/log/checklist/axis/level/score/banner`，负值、归零、损坏和失败均可作为语义结果 |
 | `scene.actors[]` | `{id,costume}` 引用根人物表 |
 | `scene.events[]` | `{at,action,hud?,sync?,lyricIds?,meaning?,support?}`；`at` 为成片秒，位于镜头内且升序 |
 | `scene.exit` | `{type,dur,origin?,target?}`；类型为 cut/dissolve/ripple/water |

@@ -151,7 +151,9 @@ export function analyzeStoryboard(data, options = {}) {
   if (data.chapters !== undefined) {
     const chapterIds = new Set();
     let previousChapter = null;
-    array(data.chapters, 'chapters').forEach((value, i) => {
+    const chapterEntries = array(data.chapters, 'chapters');
+    if (chapterEntries.length === 0) fail('chapters', '提供章节时至少需要一个章节覆盖完整成片');
+    Array.from(chapterEntries).forEach((value, i) => {
       const path = `chapters[${i}]`;
       const chapter = object(value, path);
       if (!chapter) return;
@@ -167,7 +169,7 @@ export function analyzeStoryboard(data, options = {}) {
       }
       previousChapter = chapter;
     });
-    const chapters = Array.isArray(data.chapters) ? data.chapters : [];
+    const chapters = Array.isArray(data.chapters) ? Array.from(data.chapters) : [];
     const last = chapters[chapters.length - 1];
     if (chapters.length > 0 && isObject(last) && Number.isFinite(last.end) && validDuration && Math.abs(last.end - duration) > EPSILON) {
       fail('chapters', '最后一个章节必须结束于 duration');
@@ -289,11 +291,18 @@ export function analyzeStoryboard(data, options = {}) {
         text(hud.label, `${hudPath}.label`);
         text(hud.meaning ?? hud.semantic, `${hudPath}.meaning`);
         if (!hudTypes.includes(hud.type)) fail(`${hudPath}.type`, `必须为 ${hudTypes.join('、')} 之一`);
+        if (hud.value !== undefined && !(isText(hud.value) || isFiniteNumber(hud.value))) {
+          fail(`${hudPath}.value`, '若提供，必须为非空字符串或有限数');
+        }
         if (hud.type === 'bar') {
           finite(hud.value, `${hudPath}.value`);
           finite(hud.min, `${hudPath}.min`);
           finite(hud.max, `${hudPath}.max`);
           if (isFiniteNumber(hud.min) && isFiniteNumber(hud.max) && hud.min >= hud.max) fail(hudPath, 'bar 的 min 必须小于 max');
+          if (isFiniteNumber(hud.value) && isFiniteNumber(hud.min) && isFiniteNumber(hud.max)
+            && (hud.value < hud.min || hud.value > hud.max)) {
+            fail(`${hudPath}.value`, 'bar 的 value 必须位于声明的 min 与 max 之间');
+          }
         }
       });
     }

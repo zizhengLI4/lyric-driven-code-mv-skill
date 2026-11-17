@@ -718,6 +718,7 @@ test('accepts optional story devices, contiguous chapters, material variants and
   };
   data.scenes[0].hud = [
     { id: 'mood', type: 'bar', label: '心情', value: 56, min: 0, max: 100, meaning: '行动后的情绪反馈' },
+    { id: 'heartbreak', type: 'bar', label: '心碎', value: -56, min: -100, max: 0, meaning: '关系受挫后的负向状态' },
     { id: 'save-status', type: 'status', label: '存档', value: '已保存', meaning: '任务结果已写入系统' },
   ];
   assert.deepEqual(validateStoryboard(data), []);
@@ -736,4 +737,28 @@ test('rejects invalid chapter coverage, unknown device types and HUDs without se
   assert.ok(errors.some(message => /chapters\[1\]\.id/.test(message)));
   assert.ok(errors.some(message => /chapters.*不得有空洞或重叠/.test(message)));
   assert.ok(errors.some(message => /scenes\[0\]\.hud\[0\]\.meaning/.test(message)));
+});
+
+test('requires supplied chapters to be nonempty and checks sparse chapter entries', () => {
+  const empty = validStoryboard();
+  empty.chapters = [];
+  assert.ok(validateStoryboard(empty).some(message => /^chapters:/.test(message)));
+
+  const sparse = validStoryboard();
+  sparse.chapters = [
+    { id: 'opening', start: 0, end: 12, title: '开始', meaning: '建立故事' },
+    ,
+  ];
+  assert.ok(validateStoryboard(sparse).some(message => /chapters\[1\].*必须为对象/.test(message)));
+});
+
+test('rejects HUD values that are outside a declared bar range or have unsupported types', () => {
+  const data = validStoryboard();
+  data.scenes[0].hud = [
+    { id: 'mood', type: 'bar', label: '心情', value: 101, min: 0, max: 100, meaning: '行动反馈' },
+    { id: 'counter', type: 'counter', label: '次数', value: { count: 2 }, meaning: '重复行动' },
+  ];
+  const errors = validateStoryboard(data);
+  assert.ok(errors.some(message => /scenes\[0\]\.hud\[0\].*value.*min.*max/.test(message)));
+  assert.ok(errors.some(message => /scenes\[0\]\.hud\[1\]\.value/.test(message)));
 });
