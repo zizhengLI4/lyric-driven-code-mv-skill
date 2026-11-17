@@ -85,6 +85,12 @@
 - **分镜校验**：检查时间范围、镜头覆盖、角色/道具引用、装置类型、章节覆盖、HUD 数值范围与材质变体，并提示跨镜歌词、显式踩拍和授权记录缺项。
 - **确定性 QA**：预热后重复、逆序和乱序求值同一批帧，单独记录首次光栅差异；适配器可提供清理钩子，让浏览器等资源在检查后正常退出。
 - **同步候选图**：把能量、候选拍点、镜头边界和字幕区间放在同一时间轴，输出SVG与JSON并报告起点误差，帮助定位需要试听核对的位置。
+- **卡点校验**：标了 `event.sync:"beat"` 的动作会被拿去和 `music.beats` 网格比对，偏离超过 `beatToleranceMs`（默认 80 ms）就报警告，`--strict` 下直接失败。完整链路见 [音乐卡点：从拍点到校验](#音乐卡点从拍点到校验)。
+- **可读变化密度**：`hud-density.mjs` 把切镜、材质、HUD、事件、字幕五类变化摊到时间轴，报最长空白窗与单镜内部空窗——"每 8–12 秒一次可读变化"那条规则的量尺。
+- **平台安全区**：`safe-area.py` 在帧或视频上叠顶部、底部 8.5%、右侧 6.5%、4:3 与 9:16 五条参考线，字幕底边与 HUD 关键读数必须躲开；它在开发中抓出过双语字幕压底、HUD 压顶两个真问题。
+- **点阵标题牌**：`pixel-font.py` 把数字与字母烘成 6×8 点阵（图集 PNG + 点阵 JSON），中文仍用系统字体，混排接近参考片的标题牌质感。
+- **最小渲染器**：`minimal-renderer.py` 只依赖 Pillow 与 FFmpeg，不装 starter 也能把分镜渲成带标题牌、数值 HUD 与双语字幕的无声片，用来快速验证排布。
+- **装置模板库**：`assets/devices/` 五个可直接粘的骨架（私信、读档、清单、结算、双轴滑块），各带三条外壳规则、`scene.hud[]` 与 4–5 个带数值事件；字段映射见 [装置模板](skills/lyric-driven-code-mv/references/device-templates.md)。
 - **音轨追踪与单帧检查**：音频重定位核对同一素材，导出保存实际音轨哈希与署名记录；可先导出某个时点的世界层PNG，再检查正式成片字幕。
 - **两种导出方式**：管道直出适合快速验证；PNG 落盘与恢复适合保留渲染进度。
 - **画面验收**：通过接触表查看整体叙事，再检查每镜和转场的关键帧。
@@ -92,6 +98,82 @@
 内置模板使用已有 Node.js、FFmpeg 与 FFprobe。HTML/Canvas/SVG 工程可按需要使用，HTML 动效路线可选择 HyperFrames，React 工程可选择 Remotion；其他框架的依赖由 AI 根据现有环境和你的选择配置。设计分镜时先选承载叙事的装置（聊天、游戏系统、时间轴、章节牌或材质舞台），再拆场景；可用 `chapters`、`scene.hud` 和 `materialVariant` 记录章节、情绪数值与同构图变奏。镜头不设固定秒数上限，按信息密度安排，建议每 8–12 秒有一次可读变化。
 
 细化装置、HUD、字幕和参考片证据时，按需阅读 [装置与章节](skills/lyric-driven-code-mv/references/story-devices.md)、[HUD 与字幕](skills/lyric-driven-code-mv/references/hud-and-subtitles.md)、[渲染故障预防](skills/lyric-driven-code-mv/references/render-pitfalls.md) 与 [参考片取证](skills/lyric-driven-code-mv/references/reference-film-analysis.md)。这些资料把画面观察、可复现测量和技术推断分开记录。
+
+## 音乐卡点：从拍点到校验
+
+上面那句"先给能量和拍点候选，关键动作由你确认后再锁定为卡点"，落到工具上是四步，每步都有输出：
+
+**① 分析音轨，拿到拍点候选**
+
+```powershell
+node skills/lyric-driven-code-mv/scripts/analyze-audio.mjs 'path/to/song.wav' --start 37.2 --duration 12 --out work/analysis.json
+```
+
+已知速度就直接给，并把依据写清，工具会停止猜：
+
+```powershell
+node skills/lyric-driven-code-mv/scripts/analyze-audio.mjs 'path/to/song.wav' --start 37.2 --duration 12 --bpm 110 --bpm-source metadata --bpm-evidence '曲目页标注 110 BPM' --out work/analysis.json
+```
+
+输出是 `status:"draft"` 的报告，含 `energy`、`pauses`、`onsets`、`tempo`（BPM + 相位 + 置信度 + 半速/双速歧义）和 `beats` 网格。对合成的 120 BPM 节拍实测：
+
+```text
+bpm 120 | status=estimated | confidence 0.9855 | periodSeconds 0.5 | phaseSeconds 0.000484
+beats 24 个（0.000484, 0.500484, 1.000484 …） | onsets 24
+ambiguities: 60（half）、240（double）
+```
+
+**② 把拍点写进分镜**
+
+`music.beats[]` 存拍点秒数，必须严格递增且都落在 `[0, duration)` 内；要在拍上发生的动作标 `event.sync:"beat"`：
+
+```json
+"music": { "status": "draft", "beats": [0.0, 0.5, 1.0, 1.5] },
+"events": [
+  { "at": 5.501, "action": "灯亮的一瞬落在拍上", "sync": "beat" },
+  { "at": 5.63,  "action": "这一下晚 130ms，校验器会报", "sync": "beat" }
+]
+```
+
+**③ 让校验器判，不靠眼睛**
+
+```powershell
+node skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs work/storyboard.json
+node skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs --strict work/storyboard.json
+```
+
+上面那两条事件的实测结果：
+
+```text
+普通模式：警告：scenes[0].events[4].at: sync:"beat" 偏离最近节拍 5.5 秒：offsetMs=130；容差 80 ms
+         分镜校验通过。                                  退出码 0
+strict：  严格检查未通过：仍有 1 条警告。                  退出码 1
+```
+
+偏 0.5 ms 的那条不报警，偏 130 ms 的这条被抓出来。容差由 `project.settings.beatToleranceMs` 控制，默认 80 ms。
+
+**④ 画出来看整段有没有系统性错位**
+
+```powershell
+node skills/lyric-driven-code-mv/scripts/visualize-sync.mjs work/storyboard.json work/analysis.json --out work/sync-review.svg
+python skills/lyric-driven-code-mv/scripts/timeline-sync.py 'path/to/song.wav' --storyboard work/storyboard.json -o work/timeline.png --json work/timeline.json
+```
+
+前者出 SVG + JSON（能量、候选拍点、镜头/字幕区间、每个起点误差），并检查 `duration`/`sourceOffset` 与分镜是否一致；后者更快，出 PNG 和一份切点到最近拍点的偏移统计：
+
+```text
+duration 12.00s | beats 23 | 120 BPM (speculative) | cuts 2 | lyrics 4
+cut-to-beat offset median 250ms, max 500ms, within 80ms: 1/2
+```
+
+`within 80ms` 比例高说明切点大致落在拍上；median 偏大说明整段错位，该回去改时窗，而不是改画面。
+
+**能证明什么、不能证明什么**
+
+- 能：拍点网格在哪、哪个动作偏了多少毫秒、整片切点是否系统性地不在拍上。
+- 不能：`status:"draft"` 不能升级成 `verified`——那需要人工核听，并填 `evidence.reviewer` 与含时区的 `reviewedAt`。
+- 不能：BPM 永远带半速/双速歧义（80 BPM 的歌在 160 BPM 网格上也"对得齐"），工具把歧义列出来，选哪个要人耳定。
+- 字幕不必逐句贴拍；只有显式标了 `sync:"beat"` 的事件才受 80 ms 容差约束。
 
 ## 从零到成片
 
@@ -139,9 +221,13 @@ node skills/lyric-driven-code-mv/scripts/analyze-audio.mjs 'path/to/song.wav' --
 node skills/lyric-driven-code-mv/scripts/analyze-audio.mjs 'path/to/song.wav' --start 37.2 --duration 12 --bpm 110 --out work/known-bpm.json
 node skills/lyric-driven-code-mv/scripts/visualize-sync.mjs work/storyboard.json work/analysis.json --out work/sync-review.svg
 node skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs skills/lyric-driven-code-mv/assets/storyboard-example.json --delivery
+node skills/lyric-driven-code-mv/scripts/hud-density.mjs skills/lyric-driven-code-mv/assets/storyboard-example.json --max-gap 12
+python skills/lyric-driven-code-mv/scripts/timeline-sync.py work/beat120.wav --storyboard skills/lyric-driven-code-mv/assets/storyboard-example.json -o work/timeline.png
+python skills/lyric-driven-code-mv/scripts/safe-area.py --video work/demo.mp4 --at 3 10 -o work/safe-check.png
+python skills/lyric-driven-code-mv/scripts/minimal-renderer.py skills/lyric-driven-code-mv/assets/storyboard-example.json --probe 0 120 300
 node --test
 ```
 
 测试可使用 `FFMPEG_PATH` / `FFPROBE_PATH` 指向已有程序；PATH 中缺少工具时只跳过需要实际解码/编码的用例，并说明原因。显式配置无效路径会报错。`--strict` 把结构警告升级为失败，通过它仍需核听；草稿交付须附 `music.pendingChecks` 具体时间区间与检查内容。使用说明见 [SKILL.md](skills/lyric-driven-code-mv/SKILL.md)、[时间与分镜](skills/lyric-driven-code-mv/references/storyboard-and-timing.md)、[像素/字幕](skills/lyric-driven-code-mv/references/pixel-game-visuals.md)、[音频/授权](skills/lyric-driven-code-mv/references/audio-and-rights.md)、[依赖/验收](skills/lyric-driven-code-mv/references/dependencies-and-delivery.md)。
 
-长期维护、复现反馈、兼容性、发布与回退流程见 [维护指南](MAINTENANCE.md)。同步图的误差解释与器乐叙事字幕说明见 [同步复核](skills/lyric-driven-code-mv/references/sync-review.md)。
+长期维护、复现反馈、兼容性、发布与回退流程见 [维护指南](MAINTENANCE.md)。同步图的误差解释与器乐叙事字幕说明见 [同步复核](skills/lyric-driven-code-mv/references/sync-review.md)；装置骨架的字段映射见 [装置模板](skills/lyric-driven-code-mv/references/device-templates.md)；40 条参考作品的复盘与改进依据见 [案例研究](docs/CASE-STUDY-2026-11.md)。
