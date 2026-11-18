@@ -111,15 +111,26 @@ test('LRC CLI accepts --lrc and --offset and emits a directly usable lyrics arra
   assert.deepEqual(JSON.parse(readFileSync(out, 'utf8')).map(cue => [cue.start, cue.end]), [[13, 14.5], [14.5, 17.5]]);
 });
 
-test('draft watermark can be disabled while its state remains in the asset manifest', async () => {
+test('draft 默认不烧水印，显式 draftMark:true 才加，状态仍进资产清单', async () => {
   const { createTimeline } = await importSkill('assets/templates/starter/timeline.mjs');
   const data = JSON.parse(readFileSync(resolveSkill('assets/storyboard-example.json'), 'utf8'));
   data.music.status = 'draft';
-  data.project.draftMark = false;
+  // 默认：draft 也不在画面上盖字。成片是给人看的，
+  // "核对到哪一步"由 asset-manifest 与 pendingChecks 记录，不往画面写。
+  delete data.project.draftMark;
+  assert.equal(createTimeline(data).notice, '', 'draft 默认不该烧水印');
   data.project.draftMarkText = '暂定';
   assert.equal(createTimeline(data).notice, '');
+  // 显式开启才显示
   data.project.draftMark = true;
   assert.equal(createTimeline(data).notice, '暂定');
+  data.project.draftMark = false;
+  assert.equal(createTimeline(data).notice, '');
+  // illustrative 的演示提示不受 draftMark 影响：那段音乐是模板合成的，必须让人知道
+  data.music.status = 'illustrative';
+  delete data.project.draftMark;
+  delete data.music.presentationNotice;
+  assert.match(createTimeline(data).notice, /演示时点/);
 });
 
 test('unknown props report the complete allowed-value list alongside all validation errors', async () => {

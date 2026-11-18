@@ -185,7 +185,7 @@ test('像素歌词面板配置拒绝未知模式和无效颜色', async t => {
   }
 });
 
-test('draft自动全时段标识，真实歌曲必须输入音轨，恢复拒绝更换JSON或音频内容', async t => {
+test('draft 默认不烧水印，显式开启才烧，真实歌曲必须输入音轨，恢复拒绝更换JSON或音频内容', async t => {
   const data = fixture(); data.music.status = 'draft'; data.project.audio.timebase = 'source'; data.project.sourceOffset = 2;
   const { root, path } = await setup(t, data);
   const exporter = await import(new URL('export.mjs', base));
@@ -193,17 +193,29 @@ test('draft自动全时段标识，真实歌曲必须输入音轨，恢复拒绝
   const audio = join(root, 'song.wav'); await writeFile(audio, exporter.synthesizeWAV());
   data.project.audio.path = 'song.wav'; await writeFile(path, JSON.stringify(data));
   const c = await exporter.loadProject(exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', join(root, 'frames')]));
-  assert.equal(c.audioStart, 2); assert.match(exporter.createASS(c), /待核对落点/);
-  assert.match(exporter.createASS(c), /0:00:04\.00,Notice/);
+  assert.equal(c.audioStart, 2);
+  // 默认：draft 不盖水印
+  assert.doesNotMatch(exporter.createASS(c), /待核对落点/);
+  assert.deepEqual(c.draftMark, { enabled: false, text: null });
   await exporter.prepareFrames(c, () => {});
   const manifest = JSON.parse(await readFile(join(root, 'frames', 'render-config.json'), 'utf8'));
   assert.equal(manifest.frameCount, 16);
-  data.project.draftMark = false; data.project.draftMarkText = '内部草稿提示'; await writeFile(path, JSON.stringify(data));
+  // 显式开启后才烧，文案可定制
+  data.project.draftMark = true; data.project.draftMarkText = '内部草稿提示'; await writeFile(path, JSON.stringify(data));
+  const shownDir = join(root, 'frames-with-draft-mark');
+  const shown = exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', shownDir, '--frames-only']);
+  await exporter.exportVideo(shown, () => {});
+  const shownAssets = JSON.parse(await readFile(join(shownDir, 'asset-manifest.json'), 'utf8'));
+  assert.deepEqual(shownAssets.draftMark, { enabled: true, text: '内部草稿提示' });
+  assert.match(exporter.createASS(await exporter.loadProject(shown)), /内部草稿提示/);
+  // 关掉后不烧；music.status 仍是 draft，如实记进资产清单
+  data.project.draftMark = false; await writeFile(path, JSON.stringify(data));
   const hiddenDir = join(root, 'frames-with-hidden-draft-mark');
   const hidden = exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', hiddenDir, '--frames-only']);
   await exporter.exportVideo(hidden, () => {});
   const assets = JSON.parse(await readFile(join(hiddenDir, 'asset-manifest.json'), 'utf8'));
   assert.deepEqual(assets.draftMark, { enabled: false, text: null });
+  assert.equal(assets.musicStatus, 'draft', '不烧水印不等于把状态洗成 verified');
   assert.doesNotMatch(exporter.createASS(await exporter.loadProject(hidden)), /内部草稿提示|待核对落点/);
   data.lyrics[0].text = '修改后的字幕'; await writeFile(path, JSON.stringify(data));
   const changed = await exporter.loadProject(exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', join(root, 'frames'), '--resume']));

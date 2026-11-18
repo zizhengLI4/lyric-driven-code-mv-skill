@@ -119,7 +119,17 @@ export function createTimeline(data, sceneIds = ['send', 'receive']) {
     return { id: cue.id, start: cue.start, end: Math.min(cue.end, p.duration), zh, en: cue.en ?? '' };
   });
   const status = data.music.status;
-  const notice = status === 'illustrative' ? (text(data.music.presentationNotice) ? data.music.presentationNotice : '演示时点 · 原创合成节奏') : status === 'draft' ? (p.draftMark === false ? '' : (text(p.draftMarkText) ? p.draftMarkText : '草稿 · 待核对落点')) : '';
+  // draft 默认**不**在成片上盖水印。只有显式写 project.draftMark:true 才烧入提示。
+  // 理由：成片是给人看的，反复在画面顶部烧一行「草稿」属于干扰；
+  // 而"这支片子核对到哪一步"已经由 .mp4.assets.json 的 draftMark/musicStatus
+  // 与 music.pendingChecks 如实记录，不需要再往画面上写一遍。
+  // illustrative 的演示提示仍然默认显示——那段音乐是模板合成的，性质不同。
+  const mark = p.draftMark === true;
+  const notice = status === 'illustrative'
+    ? (text(data.music.presentationNotice) ? data.music.presentationNotice : '演示时点 · 原创合成节奏')
+    : status === 'draft' && mark
+      ? (text(p.draftMarkText) ? p.draftMarkText : '草稿 · 待核对落点')
+      : '';
   let chapters = [];
   if (data.chapters !== undefined) {
     if (!Array.isArray(data.chapters)) fail('chapters须为数组');

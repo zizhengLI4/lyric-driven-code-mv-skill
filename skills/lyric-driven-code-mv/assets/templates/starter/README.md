@@ -89,7 +89,7 @@ node ..\..\..\scripts\verify-sfx.mjs --audio C:\你的工程\mixed.wav --storybo
 
 `project.audio.path` 相对于 JSON 所在目录。`--audio` 仅用于重定位同一素材：它与声明路径一致，或与仍可读取的声明文件SHA-256相同，或匹配预先记录的 `project.audio.sha256`。原路径已失效又没有哈希时会拒绝覆盖；先核对素材并更新JSON。换歌须同时更新路径、来源、许可、署名与音乐证据，不能把原创模板记录套到另一首歌上。
 
-`audio.timebase=source` 时从 `project.sourceOffset` 截取 `project.duration` 秒，`clip` 时从音轨0秒截取。源音轨长度不足直接失败。`illustrative` 使用模板原创合成节奏并拒绝显式音轨；真实音轨请改为 `draft/verified`，缺文件不能回退到演示音乐。`illustrative` 自动显示演示提示；`draft` 默认全时段显示“草稿 · 待核对落点”，可在 `project.draftMarkText` 更改文案或设 `project.draftMark:false` 隐藏。实际音乐状态仍记录在 `.mp4.assets.json`；`verified` 按分镜提供的证据记录核对结果。
+`audio.timebase=source` 时从 `project.sourceOffset` 截取 `project.duration` 秒，`clip` 时从音轨0秒截取。源音轨长度不足直接失败。`illustrative` 使用模板原创合成节奏并拒绝显式音轨；真实音轨请改为 `draft/verified`，缺文件不能回退到演示音乐。`illustrative` 自动显示演示提示。**`draft` 默认不往画面烧任何提示**——成片是给人看的，反复在顶部盖一行「草稿」属于干扰；核对到哪一步由 `.mp4.assets.json` 的 `musicStatus` / `draftMark` 与 `music.pendingChecks` 如实记录。需要成片内可见的草稿提示时显式写 `project.draftMark:true`，文案用 `project.draftMarkText` 改；写 `false` 与不写等价。`verified` 按分镜提供的证据记录核对结果。
 
 每次MP4导出生成同路径 `.mp4.assets.json`，保存声明的来源/许可、实际音轨与裁剪WAV哈希、裁切起点、分镜及输出哈希。帧目录另保留 `asset-manifest.json`。外部非 `original` 音轨有 `credit` 时，在最后最多4秒烧入“音乐：署名｜许可”短署名；完整来源、许可链接与修改说明保留在记录中，按具体许可补到发布说明或片尾并检查可读性。记录完整和哈希相同都不证明许可有效。
 
