@@ -14,7 +14,7 @@
 | `viewfinder` | 圆窗、准星、手机或掌机视角 |
 | `material-stage` | 同一构图的季节、材质或年代变奏 |
 
-在 JSON 顶层写 `device`，场景写 `chapters`、`materialVariant` 和 `hud`。这些字段帮助分镜和复核保持一致；当前 starter 只校验它们，不会自动画出新的 UI。
+在 JSON 顶层写 `device`、`chapters` 和可选的 `captionStyle`，场景写 `materialVariant` 和 `hud`。这些字段帮助分镜和复核保持一致；starter 会把 `captionStyle.mode:"scene-panel"` 与章节标题绘制成歌词面板和章节牌，世界层的新 HUD 仍需由自定义画法实现。
 
 ## HUD 是情绪的反馈
 

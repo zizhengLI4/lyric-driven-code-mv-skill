@@ -16,13 +16,14 @@
 <div class="controls"><button id="play">播放</button><input id="seek" aria-label="时间" type="range" min="0" max="12" value="0" step="0.01"><output id="time">0.00 / 12秒</output><label><input id="safe" type="checkbox"> 显示字幕安全区</label></div>
 <div class="controls jumps"><span>抽帧查看：</span><button data-t="1.4">推船</button><button data-t="5.1">转场开始</button><button data-t="5.55">转场中点</button><button data-t="6">镜头边界</button><button data-t="9.8">受阻回应</button><button data-t="11.9">最终状态</button></div>
 <p class="note" id="state"></p>
-<p class="note">场景与导出共享 <code>frame.mjs → renderFrame(t)</code>。字幕在 1920×1080 的独立层绘制；浏览器和 ffmpeg 使用本机系统字体，字形与间距可能不同。模板不下载字体，最终字幕以导出文件为准。</p>
+<p class="note">场景与导出共享 <code>frame.mjs → renderFrame(t)</code>。歌词层支持普通底部字幕和融入画面的像素歌词面板；浏览器和 ffmpeg 使用本机系统字体，字形与间距可能不同。模板不下载字体，最终字幕以导出文件为准。</p>
 <script type="module">
 import { renderFrame, resolveTimeline, CAPTIONS, DURATION, DEFAULT_SEED } from './frame.mjs';
 // HTTP预览与导出读取同一份已加载分镜；直接静态打开仍可看默认演示。
 let project = { timeline: null, duration: DURATION, seed: DEFAULT_SEED };
 try { const response = await fetch('/project.json'); if (response.ok) project = await response.json(); } catch {}
 const timeline = project.timeline, duration = project.duration, captions = timeline?.captions ?? CAPTIONS;
+const captionStyle = timeline?.captionStyle ?? { mode: 'bottom', placement: 'bottom', lines: 2, primary: { color: '#F4F5ED', outline: '#131B29', shadow: '#131B29' }, secondary: { color: '#E5DEC4', outline: '#131B29' }, panel: { color: '#131B29', alpha: .86, border: '#131B29', accent: '#FFD58A' }, chapter: { show: false, position: 'top', duration: 2.4 } };
 const notice = timeline?.notice ?? '演示时点 · 原创合成节奏', noticeEnd = timeline?.noticeEnd ?? 2.2;
 const view = document.getElementById('view'), ctx = view.getContext('2d');
 const pixels = document.createElement('canvas'); pixels.width = 384; pixels.height = 216;
@@ -35,11 +36,45 @@ if (timeline) {
 }
 await document.fonts.ready;
 let playing = false, startClock = 0, current = 0;
+const fontFamily = captionStyle.font ? `"${captionStyle.font}",` : '';
+const secondaryFontFamily = captionStyle.secondaryFont ? `"${captionStyle.secondaryFont}",` : fontFamily;
+function rgba(hex, alpha = 1) { const value = hex.replace('#', ''); const n = Number.parseInt(value, 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${alpha})`; }
+function drawOutlinedText(text, x, y, size, fill, outline, shadow, weight = 700) {
+  ctx.font = `${weight} ${size}px ${fontFamily}"Microsoft YaHei",system-ui,sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.lineJoin = 'miter'; ctx.lineWidth = Math.max(4, Math.round(size * .12)); ctx.strokeStyle = shadow; ctx.strokeText(text, x + 3, y + 5);
+  ctx.strokeStyle = outline; ctx.strokeText(text, x, y); ctx.fillStyle = fill; ctx.fillText(text, x, y);
+}
+function drawPixelPanel(x, y, width, height, style) {
+  ctx.fillStyle = rgba(style.panel.color, style.panel.alpha); ctx.fillRect(x, y, width, height);
+  ctx.strokeStyle = style.panel.border; ctx.lineWidth = 4; ctx.strokeRect(x + 2, y + 2, width - 4, height - 4);
+  ctx.fillStyle = style.panel.accent; ctx.fillRect(x, y, Math.min(14, width / 6), 5); ctx.fillRect(x + width - Math.min(14, width / 6), y + height - 5, Math.min(14, width / 6), 5);
+  ctx.fillRect(x + 12, y + 12, 5, 5); ctx.fillRect(x + width - 17, y + 12, 5, 5);
+}
+function drawScenePanel(cue, style) {
+  const primarySize = 48, secondarySize = 31, gap = cue.en && style.lines > 1 ? 39 : 0, panelHeight = cue.en && style.lines > 1 ? 150 : 96;
+  ctx.font = `700 ${primarySize}px ${fontFamily}"Microsoft YaHei",system-ui,sans-serif`;
+  const width = Math.min(1710, Math.max(ctx.measureText(cue.zh).width, cue.en ? (ctx.font = `${secondarySize}px ${secondaryFontFamily}"Microsoft YaHei",system-ui,sans-serif`, ctx.measureText(cue.en).width) : 0) + 88);
+  const x = (1920 - width) / 2, y = 1080 - 196;
+  drawPixelPanel(x, y, width, panelHeight, style);
+  drawOutlinedText(cue.zh, 960, y + 62, primarySize, style.primary.color, style.primary.outline, style.primary.shadow);
+  if (cue.en && style.lines > 1) drawOutlinedText(cue.en, 960, y + 62 + gap, secondarySize, style.secondary.color, style.secondary.outline, style.primary.shadow, 600);
+}
+function drawChapterCard(t, style) {
+  if (!style.chapter?.show || !timeline?.chapters?.length) return;
+  const chapter = timeline.chapters.find(item => t >= item.start && t < item.end && t < item.start + style.chapter.duration);
+  if (!chapter) return;
+  ctx.font = `700 34px ${fontFamily}"Microsoft YaHei",system-ui,sans-serif`;
+  const width = Math.min(1100, ctx.measureText(chapter.title).width + 90), x = 60 + width / 2, y = style.chapter.position === 'bottom' ? 740 : 78;
+  drawPixelPanel(x, y, width, 68, style);
+  drawOutlinedText(chapter.title, 960, y + 46, 34, style.panel.accent, style.panel.border, style.panel.color);
+}
 function draw(t) {
   const frame = renderFrame(t, { seed: project.seed, ...(timeline ? { timeline } : {}) }); px.putImageData(new ImageData(frame.data, frame.width, frame.height), 0, 0);
   ctx.imageSmoothingEnabled = false; ctx.drawImage(pixels, 0, 0, view.width, view.height);
   const cue = captions.find(c => t >= c.start && t < c.end);
-  if (cue) {
+  if (cue && captionStyle.mode === 'scene-panel') drawScenePanel(cue, captionStyle);
+  else if (cue) {
     ctx.font = '44px "Microsoft YaHei",system-ui,sans-serif'; const zhWidth = ctx.measureText(cue.zh).width;
     ctx.font = '31px "Microsoft YaHei",system-ui,sans-serif'; const enWidth = ctx.measureText(cue.en).width;
     const width = Math.min(1640, Math.max(zhWidth, enWidth) + 48);
@@ -47,7 +82,13 @@ function draw(t) {
     ctx.textAlign = 'center'; ctx.fillStyle = '#edf5f4'; ctx.font = '44px "Microsoft YaHei",system-ui,sans-serif'; ctx.fillText(cue.zh, 960, 947);
     ctx.font = '31px "Microsoft YaHei",system-ui,sans-serif'; ctx.fillText(cue.en, 960, 989);
   }
-  if (notice && t < noticeEnd) { ctx.font='27px "Microsoft YaHei",system-ui,sans-serif'; const width=ctx.measureText(notice).width+48; ctx.fillStyle='rgba(19,27,41,.86)'; ctx.fillRect((1920-width)/2,55,width,49); ctx.fillStyle='#e5dec4'; ctx.textAlign='center'; ctx.fillText(notice,960,90); }
+  drawChapterCard(t, captionStyle);
+  if (notice && t < noticeEnd) {
+    ctx.font = `700 27px ${fontFamily}"Microsoft YaHei",system-ui,sans-serif`; const width = ctx.measureText(notice).width + 48;
+    if (captionStyle.mode === 'scene-panel') { drawPixelPanel((1920 - width) / 2, 55, width, 49, captionStyle); ctx.fillStyle = captionStyle.panel.accent; }
+    else { ctx.fillStyle = 'rgba(19,27,41,.86)'; ctx.fillRect((1920 - width) / 2, 55, width, 49); ctx.fillStyle = '#e5dec4'; }
+    ctx.textAlign = 'center'; ctx.fillText(notice, 960, 90);
+  }
   if (safe.checked) { ctx.strokeStyle='#d8b876'; ctx.lineWidth=2; ctx.strokeRect(153.6,64.8,1612.8,939.6); }
   const s = resolveTimeline(t, timeline ?? undefined); document.getElementById('state').textContent = `镜头 ${s.index+1} · 当前镜头 ${s.local.toFixed(2)} 秒${s.nextIndex===null?'':` · 转场 ${(s.progress*100).toFixed(0)}% · 下一镜预卷固定0秒`}`;
   seek.value=t; time.value=`${t.toFixed(2)} / ${duration}秒`;

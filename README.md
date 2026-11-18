@@ -96,7 +96,23 @@
 - **两种导出方式**：管道直出适合快速验证；PNG 落盘与恢复适合保留渲染进度。
 - **画面验收**：通过接触表查看整体叙事，再检查每镜和转场的关键帧。
 
-内置模板使用已有 Node.js、FFmpeg 与 FFprobe。HTML/Canvas/SVG 工程可按需要使用，HTML 动效路线可选择 HyperFrames，React 工程可选择 Remotion；其他框架的依赖由 AI 根据现有环境和你的选择配置。设计分镜时先选承载叙事的装置（聊天、游戏系统、时间轴、章节牌或材质舞台），再拆场景；可用 `chapters`、`scene.hud` 和 `materialVariant` 记录章节、情绪数值与同构图变奏。镜头不设固定秒数上限，按信息密度安排，建议每 8–12 秒有一次可读变化。
+内置模板使用已有 Node.js、FFmpeg 与 FFprobe。HTML/Canvas/SVG 工程可按需要使用，HTML 动效路线可选择 HyperFrames，React 工程可选择 Remotion；其他框架的依赖由 AI 根据现有环境和你的选择配置。设计分镜时先选承载叙事的装置（聊天、游戏系统、时间轴、章节牌或材质舞台），再拆场景；可用 `chapters`、`scene.hud` 和 `materialVariant` 记录章节、情绪数值和同构图变奏。镜头不设固定秒数上限，按信息密度安排，建议每 8–12 秒有一次可读变化。
+
+参考像素游戏歌词视频时，可在分镜顶层加入 `captionStyle`，把歌词变成画面内 UI，而不是普通外挂字幕。`mode:"scene-panel"` 会在预览和 ASS 导出中同步生成暖白主歌词、淡色辅助行、红粉描边、深色像素面板、角标装饰和章节牌；`placement:"integrated"` 会把面板放进画面下方安全区。未提供该字段仍使用旧的普通底部双语字幕，旧分镜无需修改。
+
+```json
+"captionStyle": {
+  "mode": "scene-panel",
+  "placement": "integrated",
+  "lines": 2,
+  "primary": { "color": "#FFF1D6", "outline": "#E56B7A", "shadow": "#24152B" },
+  "secondary": { "color": "#F3C8C7", "outline": "#24152B" },
+  "panel": { "color": "#24152B", "alpha": 0.88, "border": "#F0A06D", "accent": "#FFD58A" },
+  "chapter": { "show": true, "position": "top", "duration": 2.4 }
+}
+```
+
+这套配置只负责歌词和章节牌的视觉层，不会替代歌词时间校对；关键动作仍按“能量自动、关键动作确认后卡点”的混合模式落到时间线上。
 
 细化装置、HUD、字幕和参考片证据时，按需阅读 [装置与章节](skills/lyric-driven-code-mv/references/story-devices.md)、[HUD 与字幕](skills/lyric-driven-code-mv/references/hud-and-subtitles.md)、[渲染故障预防](skills/lyric-driven-code-mv/references/render-pitfalls.md) 与 [参考片取证](skills/lyric-driven-code-mv/references/reference-film-analysis.md)。这些资料把画面观察、可复现测量和技术推断分开记录。
 

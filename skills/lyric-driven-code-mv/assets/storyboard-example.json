@@ -19,6 +19,15 @@
       "use": "demo"
     }
   },
+  "captionStyle": {
+    "mode": "scene-panel",
+    "placement": "integrated",
+    "lines": 2,
+    "primary": { "color": "#FFF1D6", "outline": "#E56B7A", "shadow": "#24152B" },
+    "secondary": { "color": "#F3C8C7", "outline": "#24152B" },
+    "panel": { "color": "#24152B", "alpha": 0.88, "border": "#F0A06D", "accent": "#FFD58A" },
+    "chapter": { "show": true, "position": "top", "duration": 2.4 }
+  },
   "note": "长镜头示范：主镜 send 是 0–24 秒的一镜，机位全程不动，靠三次可读变化撑住——4.5 秒 HUD 按 delta 下降一次，9.0 秒与 17.2 秒字幕各换一行（0.8 秒的第一行只是建立基线）。判据是可读变化而不是秒数，所以 24 秒不需要切成四个 6 秒的镜头；旧版「一镜 4–8 秒」的写法已作废。24 秒后的 receive 只有 2 秒，是结尾结算牌，只收束结果、不新增读数变化，也不参与长镜头判据。starter --storyboard 直接读取项目、字幕、镜头与转场；scene.id 对应 SCENE_RENDERERS 画法，事件动作由画法实现。",
   "device": {
     "id": "river-message-system",

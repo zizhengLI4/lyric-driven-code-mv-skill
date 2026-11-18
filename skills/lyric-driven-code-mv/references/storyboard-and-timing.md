@@ -70,6 +70,7 @@ starter 还包含一层演出缩放：JSON 路线在调用 `SCENE_RENDERERS[scen
 | `project.audio` | `path,timebase,provenance?,license,credit,url?,licenseUrl?,use`，授权说明见音频参考 |
 | `device?` | `{id,type,name,purpose}`；先描述承载叙事的界面、系统、时间轴、视角或材质舞台，再决定场景画法 |
 | `chapters?` | 至少一个且连续覆盖 `[0,duration)` 的 `{id,start,end,title,meaning}`；用于标题牌、章节牌或关系阶段，不替代 `scenes[]` |
+| `captionStyle?` | `{mode:"bottom"|"scene-panel",placement:"bottom"|"integrated",lines:1|2,primary,secondary,panel,chapter}`；`scene-panel` 将歌词做成画面内像素 UI，预览与 ASS 导出共用归一化配置 |
 | `lyrics[]` | `id,start,end,text`，可加 `zh,en`；有意跨镜可加 `allowSceneSplit:true,splitReason` |
 | `music` | `status,beats[],sections[]:{id,start,end},evidence?,presentationNotice?,pendingChecks?` |
 | `music.evidence` | `method,limitations,reviewer?,reviewedAt?`；最后两项用于人工核对 |
@@ -86,7 +87,7 @@ starter 还包含一层演出缩放：JSON 路线在调用 `SCENE_RENDERERS[scen
 
 先选 `device` 再选场景：装置决定观众如何读懂状态，场景只负责这一段目标、行动、反馈和结果。`chapters` 可以让标题牌、关系卡或结算牌拥有明确时间区间。长镜头没有固定秒数上限；镜长由信息密度决定，建议每 8–12 秒至少有一次可读变化（字幕、HUD、光线、材质、粒子或状态），留白可以保留。
 
-starter 的 `--storyboard` 直接读取项目配置、歌词、场景与 `exit`，绘图函数通过 `SCENE_RENDERERS[scene.id]` 注册。自带 `send/receive` 画法按镜头局部时长求值；新增 ID 需实现对应画法，JSON 只定义分镜而不生成美术。`device`、`chapters`、`materialVariant` 和 `scene.hud` 目前是兼容的语义元数据，校验器会检查结构，但不会替自定义画法生成界面。字幕只从当前 JSON 的 `text/zh/en` 读取；源音频路径与配置覆盖规则见 starter 说明。
+starter 的 `--storyboard` 直接读取项目配置、歌词、场景、章节牌、`captionStyle` 与 `exit`，绘图函数通过 `SCENE_RENDERERS[scene.id]` 注册。自带 `send/receive` 画法按镜头局部时长求值；新增 ID 需实现对应画法，JSON 只定义分镜而不生成世界层美术。`device`、`materialVariant` 和 `scene.hud` 是语义元数据，校验器会检查结构；`captionStyle` 与 `chapters` 则由 starter 的歌词层直接绘制。字幕文案仍只从当前 JSON 的 `text/zh/en` 读取；源音频路径与配置覆盖规则见 starter 说明。
 
 `exitTransition` 自由文本仍接受，用于旧工程的叙事说明；新工程采用结构化 `exit` 确定时序。`cut` 的 `dur` 为 0，其他转场满足 `0 < dur < end-start`。`origin` 是两个 `[0,1]` 归一化坐标。`target` 默认为下一镜，也可明确写下一镜 ID；末镜非 cut 必须 `target:"background"`。
 

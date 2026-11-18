@@ -131,6 +131,38 @@ export function analyzeStoryboard(data, options = {}) {
   if (data.schemaVersion !== 1) fail('schemaVersion', '必须为 1');
   if (data.timebase !== 'clip') fail('timebase', '必须为 clip；所有时间点使用成片秒');
 
+  if (data.captionStyle !== undefined) {
+    const style = object(data.captionStyle, 'captionStyle');
+    if (style) {
+      if (!['bottom', 'scene-panel'].includes(style.mode ?? 'bottom')) fail('captionStyle.mode', '必须为 bottom 或 scene-panel');
+      const placement = style.placement ?? (style.mode === 'scene-panel' ? 'integrated' : 'bottom');
+      if (!['bottom', 'integrated'].includes(placement)) fail('captionStyle.placement', '必须为 bottom 或 integrated');
+      if (style.lines !== undefined && (!Number.isInteger(style.lines) || style.lines < 1 || style.lines > 2)) fail('captionStyle.lines', '必须为 1 或 2');
+      const captionColor = (value, path) => {
+        if (value !== undefined && (typeof value !== 'string' || !/^#[0-9a-f]{6}$/iu.test(value))) fail(path, '必须为 #RRGGBB 颜色');
+      };
+      for (const [section, fields] of [['primary', ['color', 'outline', 'shadow']], ['secondary', ['color', 'outline']], ['panel', ['color', 'border', 'accent']]]) {
+        if (style[section] !== undefined) {
+          const part = object(style[section], `captionStyle.${section}`);
+          if (part) fields.forEach(field => captionColor(part[field], `captionStyle.${section}.${field}`));
+        }
+      }
+      if (style.panel !== undefined && isObject(style.panel) && style.panel.alpha !== undefined
+        && (!isFiniteNumber(style.panel.alpha) || style.panel.alpha < 0 || style.panel.alpha > 1)) fail('captionStyle.panel.alpha', '必须为 0–1 的有限数');
+      for (const key of ['font', 'secondaryFont']) {
+        if (style[key] !== undefined && (typeof style[key] !== 'string' || /[\r\n,]/u.test(style[key]))) fail(`captionStyle.${key}`, '不能含逗号或换行');
+      }
+      if (style.chapter !== undefined) {
+        const chapter = object(style.chapter, 'captionStyle.chapter');
+        if (chapter) {
+          if (chapter.show !== undefined && typeof chapter.show !== 'boolean') fail('captionStyle.chapter.show', '必须为布尔值');
+          if (chapter.position !== undefined && !['top', 'bottom'].includes(chapter.position)) fail('captionStyle.chapter.position', '必须为 top 或 bottom');
+          if (chapter.duration !== undefined && (!isFiniteNumber(chapter.duration) || chapter.duration <= 0 || chapter.duration > 10)) fail('captionStyle.chapter.duration', '必须为 (0, 10] 的有限数');
+        }
+      }
+    }
+  }
+
   const project = object(data.project, 'project') ?? {};
   for (const key of ['fps', 'duration']) {
     if (finite(project[key], `project.${key}`) && project[key] <= 0) fail(`project.${key}`, '必须大于 0');

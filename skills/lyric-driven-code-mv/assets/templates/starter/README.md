@@ -118,6 +118,24 @@ exit: { type: 'ripple', dur: 0.9, origin: [0.55, 0.62] }
 
 Windows 默认使用已有 `Microsoft YaHei`；可通过 `--font "已有字体名称"` 指定本机字体。浏览器与 ffmpeg 的字体选择和排版可能随系统变化，模板不下载字体。导出检测到缺字会失败并提示换用已安装字体，交付字幕以成片为准。
 
+### 像素歌词面板
+
+分镜顶层可以加入 `captionStyle`，把歌词做成参考像素游戏视频里的画面内 UI：
+
+```json
+"captionStyle": {
+  "mode": "scene-panel",
+  "placement": "integrated",
+  "lines": 2,
+  "primary": { "color": "#FFF1D6", "outline": "#E56B7A", "shadow": "#24152B" },
+  "secondary": { "color": "#F3C8C7", "outline": "#24152B" },
+  "panel": { "color": "#24152B", "alpha": 0.88, "border": "#F0A06D", "accent": "#FFD58A" },
+  "chapter": { "show": true, "position": "top", "duration": 2.4 }
+}
+```
+
+`mode:"scene-panel"` 会同时改变浏览器预览和 ASS 导出的歌词层：主歌词暖白、辅助行淡色、彩色描边、深色像素面板和角标装饰。`chapter.show` 会把 `chapters[].title` 显示为章节牌。未提供 `captionStyle` 时保留普通底部双语字幕，旧分镜兼容；该配置只改变视觉呈现，不会替代歌词校对或关键卡点确认。
+
 导出自动用 ffprobe 核对时长、尺寸、H.264/AAC及像素格式，并用 ffmpeg 解码全片。交付前仍需抽帧看开头提示、转场边界、第二镜动作、最终未抵达状态以及字幕暗板。
 
 ```powershell

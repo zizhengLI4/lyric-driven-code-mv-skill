@@ -4,6 +4,83 @@ const text = s => typeof s === 'string' && s.trim().length > 0;
 const object = o => o && typeof o === 'object' && !Array.isArray(o);
 const fail = message => { throw new Error(`分镜执行校验：${message}`); };
 
+const COLOR = /^#[0-9a-f]{6}$/i;
+const DEFAULT_CAPTION_STYLE = Object.freeze({
+  mode: 'bottom',
+  placement: 'bottom',
+  lines: 2,
+  primary: { color: '#F4F5ED', outline: '#131B29', shadow: '#131B29' },
+  secondary: { color: '#E5DEC4', outline: '#131B29' },
+  panel: { color: '#131B29', alpha: 0.86, border: '#131B29', accent: '#FFD58A' },
+  font: '',
+  secondaryFont: '',
+  chapter: { show: false, position: 'top', duration: 2.4 }
+});
+
+function normalizedColor(value, path, fallback) {
+  const result = value ?? fallback;
+  if (typeof result !== 'string' || !COLOR.test(result)) fail(`${path}须为#RRGGBB颜色`);
+  return result.toUpperCase();
+}
+
+function normalizeCaptionStyle(raw) {
+  if (raw === undefined) return structuredClone(DEFAULT_CAPTION_STYLE);
+  if (!object(raw)) fail('captionStyle须为对象');
+  const mode = raw.mode ?? 'bottom';
+  const placement = raw.placement ?? (mode === 'scene-panel' ? 'integrated' : 'bottom');
+  if (!['bottom', 'scene-panel'].includes(mode)) fail('captionStyle.mode须为bottom或scene-panel');
+  if (!['bottom', 'integrated'].includes(placement)) fail('captionStyle.placement须为bottom或integrated');
+
+  const lines = raw.lines ?? 2;
+  if (!Number.isInteger(lines) || lines < 1 || lines > 2) fail('captionStyle.lines须为1或2');
+  for (const key of ['primary', 'secondary', 'panel']) {
+    if (raw[key] !== undefined && !object(raw[key])) fail(`captionStyle.${key}须为对象`);
+  }
+  const primary = object(raw.primary) ? raw.primary : {};
+  const secondary = object(raw.secondary) ? raw.secondary : {};
+  const panel = object(raw.panel) ? raw.panel : {};
+  const alpha = panel.alpha ?? DEFAULT_CAPTION_STYLE.panel.alpha;
+  if (!finite(alpha) || alpha < 0 || alpha > 1) fail('captionStyle.panel.alpha须为0–1');
+
+  const chapter = raw.chapter ?? {};
+  if (!object(chapter)) fail('captionStyle.chapter须为对象');
+  const showChapter = chapter.show ?? false;
+  const chapterPosition = chapter.position ?? 'top';
+  const chapterDuration = chapter.duration ?? DEFAULT_CAPTION_STYLE.chapter.duration;
+  if (typeof showChapter !== 'boolean') fail('captionStyle.chapter.show须为布尔值');
+  if (!['top', 'bottom'].includes(chapterPosition)) fail('captionStyle.chapter.position须为top或bottom');
+  if (!finite(chapterDuration) || chapterDuration <= 0 || chapterDuration > 10) fail('captionStyle.chapter.duration须为0–10秒');
+  for (const key of ['font', 'secondaryFont']) {
+    if (raw[key] !== undefined && (typeof raw[key] !== 'string' || /[\r\n,]/.test(raw[key]))) {
+      fail(`captionStyle.${key}不能含逗号或换行`);
+    }
+  }
+
+  return {
+    mode,
+    placement,
+    lines,
+    primary: {
+      color: normalizedColor(primary.color, 'captionStyle.primary.color', DEFAULT_CAPTION_STYLE.primary.color),
+      outline: normalizedColor(primary.outline, 'captionStyle.primary.outline', DEFAULT_CAPTION_STYLE.primary.outline),
+      shadow: normalizedColor(primary.shadow, 'captionStyle.primary.shadow', DEFAULT_CAPTION_STYLE.primary.shadow),
+    },
+    secondary: {
+      color: normalizedColor(secondary.color, 'captionStyle.secondary.color', DEFAULT_CAPTION_STYLE.secondary.color),
+      outline: normalizedColor(secondary.outline, 'captionStyle.secondary.outline', DEFAULT_CAPTION_STYLE.secondary.outline),
+    },
+    panel: {
+      color: normalizedColor(panel.color, 'captionStyle.panel.color', DEFAULT_CAPTION_STYLE.panel.color),
+      alpha,
+      border: normalizedColor(panel.border, 'captionStyle.panel.border', DEFAULT_CAPTION_STYLE.panel.border),
+      accent: normalizedColor(panel.accent, 'captionStyle.panel.accent', DEFAULT_CAPTION_STYLE.panel.accent),
+    },
+    font: raw.font ?? '',
+    secondaryFont: raw.secondaryFont ?? '',
+    chapter: { show: showChapter, position: chapterPosition, duration: chapterDuration },
+  };
+}
+
 export function createTimeline(data, sceneIds = ['send', 'receive']) {
   if (!object(data) || data.schemaVersion !== 1 || data.timebase !== 'clip') fail('schemaVersion须为1，timebase须为clip');
   const p = data.project;
@@ -43,5 +120,27 @@ export function createTimeline(data, sceneIds = ['send', 'receive']) {
   });
   const status = data.music.status;
   const notice = status === 'illustrative' ? (text(data.music.presentationNotice) ? data.music.presentationNotice : '演示时点 · 原创合成节奏') : status === 'draft' ? (p.draftMark === false ? '' : (text(p.draftMarkText) ? p.draftMarkText : '草稿 · 待核对落点')) : '';
-  return { duration: p.duration, scenes, captions, music: structuredClone(data.music), notice, noticeEnd: status === 'illustrative' ? Math.min(2.2, p.duration) : p.duration };
+  let chapters = [];
+  if (data.chapters !== undefined) {
+    if (!Array.isArray(data.chapters)) fail('chapters须为数组');
+    chapters = data.chapters.map((chapter, i) => {
+      if (!object(chapter) || !text(chapter.id) || !text(chapter.title) || !finite(chapter.start) || !finite(chapter.end)
+        || chapter.start < 0 || chapter.start >= p.duration || chapter.end <= chapter.start || chapter.end > p.duration + 1e-6) {
+        fail(`chapters[${i}]结构或时间无效`);
+      }
+      return { id: chapter.id, start: chapter.start, end: Math.min(chapter.end, p.duration), title: chapter.title, meaning: chapter.meaning ?? '' };
+    });
+  }
+  return {
+    duration: p.duration,
+    scenes,
+    captions,
+    chapters,
+    captionStyle: normalizeCaptionStyle(data.captionStyle),
+    music: structuredClone(data.music),
+    notice,
+    noticeEnd: status === 'illustrative' ? Math.min(2.2, p.duration) : p.duration,
+  };
 }
+
+export { DEFAULT_CAPTION_STYLE, normalizeCaptionStyle };

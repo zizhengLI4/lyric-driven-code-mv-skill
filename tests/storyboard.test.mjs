@@ -725,6 +725,23 @@ test('accepts optional story devices, contiguous chapters, material variants and
   assert.deepEqual(validateStoryboard(data), []);
 });
 
+test('validates optional integrated pixel caption style', () => {
+  const data = validStoryboard();
+  data.captionStyle = {
+    mode: 'scene-panel', placement: 'integrated', lines: 2,
+    primary: { color: '#FFF1D6', outline: '#E56B7A', shadow: '#24152B' },
+    secondary: { color: '#F3C8C7' },
+    panel: { color: '#24152B', alpha: 0.88, border: '#F0A06D', accent: '#FFD58A' },
+    chapter: { show: true, position: 'top', duration: 2.4 },
+  };
+  assert.deepEqual(validateStoryboard(data), []);
+  for (const [field, value] of [['mode', 'unknown'], ['lines', 3], ['panel', { alpha: 2 }], ['primary', { color: 'white' }]]) {
+    const copy = structuredClone(data);
+    copy.captionStyle[field] = value;
+    assert.ok(validateStoryboard(copy).some(message => message.startsWith(`captionStyle.${field}`) || message.startsWith('captionStyle')), field);
+  }
+});
+
 test('rejects invalid chapter coverage, unknown device types and HUDs without semantic meaning', () => {
   const data = validStoryboard();
   data.device = { id: 'x', type: 'unknown-device', name: '装置', purpose: '用途' };

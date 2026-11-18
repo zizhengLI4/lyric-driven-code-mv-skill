@@ -122,7 +122,7 @@
 | D1 | 镜头长度教条（4–8 秒）与参考片事实冲突 | §3 镜头长度 | `GETTING-STARTED.md` 附节、`storyboard-and-timing.md` | **P0** |
 | D2 | 没有"装置层"（device / wrapper） | 20 条作品以界面为外壳 | `SKILL.md`、`storyboard-and-timing.md`、schema | **P0** |
 | D3 | HUD 只有"五格进度条 + 状态字" | 实测 12 类 HUD（血条/等级/心情/好感度/存档/计数/时钟/双轴/清单/结算/横幅/徽章） | `pixel-game-visuals.md`、schema | **P0** |
-| D4 | 字幕系统只有"一行 + 暗影" | 双语上下/左右、黑底条、符号前缀、竖排、单字散点 | 无（需新建） | **P1** |
+| D4 | 字幕系统只有"一行 + 暗影" | 双语上下/左右、黑底条、符号前缀、竖排、单字散点 | `captionStyle` + starter 预览/ASS 歌词层 | **P1** |
 | D5 | 没有"参考片取证"流程与工具 | 本次现场手写采样脚本 5 个 | 无（需新建） | **P1** |
 | D6 | `references/render-pitfalls.md` 被 `minimal-renderer.py` 首行注释引用，**文件不存在** | `minimal-renderer.py:11` 指向该路径 | 需补文件 | **P0（bug）** |
 | D7 | 校验器只查结构，不查语义 | music 许可不校验、device 不校验、HUD 无事件、字幕无安全区 | `validate-storyboard.mjs` | **P1** |
@@ -148,6 +148,7 @@
 | 改校验器 | `scripts/validate-storyboard.mjs` | 完成（report/strict/json；77 项测试全过；示例 strict 零警告） |
 | 改渲染器 | `scripts/minimal-renderer.py` | 完成（标题牌 + 事件驱动数值 HUD + 双语字幕自动缩宽） |
 | 更新示例 | `assets/storyboard-example.json` | 完成（device/chapters/双语/负向 HUD/音乐署名） |
+| 新增像素歌词面板 | `captionStyle`、starter `preview.html` / `export.mjs`、校验器与文档 | 完成（画面内歌词 UI、章节牌、旧分镜兼容、预览与 ASS 同源） |
 | 改教程 | `GETTING-STARTED.md` | 完成（删"4–8 秒"教条、新增"先拆一支参考片 15 分钟"、更新自检声明） |
 | 改门面 | `README.md` | 完成（三层结构、内容清单、strict 用法、案例研究入口） |
 | 补衔接 | `references/pixel-game-visuals.md` | 完成（HUD/装置/安全区三处指向新文档，不重复正文） |

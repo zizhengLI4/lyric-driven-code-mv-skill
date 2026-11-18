@@ -7,7 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { renderFrame, WIDTH, HEIGHT, DURATION, DEFAULT_SEED, CAPTIONS, SCENE_RENDERERS } from './frame.mjs';
-import { createTimeline } from './timeline.mjs';
+import { createTimeline, DEFAULT_CAPTION_STYLE } from './timeline.mjs';
 import { encodePNG, inspectPNG } from './png.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -224,9 +224,55 @@ export function synthesizeWAV(duration = DURATION) {
 
 function assTime(t) { const cs = Math.round(t * 100); return `${Math.floor(cs / 360000)}:${String(Math.floor(cs / 6000) % 60).padStart(2, '0')}:${String(Math.floor(cs / 100) % 60).padStart(2, '0')}.${String(cs % 100).padStart(2, '0')}`; }
 const assText = text => text.replace(/[{}]/g, '').replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\N');
+const assColor = (hex, opacity = 1) => {
+  const rgb = hex.slice(1).toUpperCase();
+  const visible = Math.max(0, Math.min(1, opacity));
+  const a = Math.round((1 - visible) * 255).toString(16).padStart(2, '0').toUpperCase();
+  return `&H${a}${rgb.slice(4, 6)}${rgb.slice(2, 4)}${rgb.slice(0, 2)}`;
+};
+
+function scenePanelASS(c, timeline, style) {
+  const font = style.font || c.font, secondaryFont = style.secondaryFont || font;
+  const size = Math.round(c.height * 0.045), secondarySize = Math.round(c.height * 0.028), introSize = Math.round(c.height * 0.025);
+  const margin = Math.round(c.height * (style.placement === 'integrated' ? 0.16 : 0.07));
+  const x = Math.round(c.width / 2), y = c.height - margin;
+  const lines = [
+    `Style: LyricPanel,${font},${size},${assColor(style.primary.color)},${assColor(style.primary.color)},${assColor(style.panel.border)},${assColor(style.panel.color, style.panel.alpha)},1,0,0,0,100,100,0,0,3,${Math.max(3, Math.round(c.height * 0.006))},${Math.max(2, Math.round(c.height * 0.004))},2,${Math.round(c.width * 0.08)},${Math.round(c.width * 0.08)},${margin},1`,
+    `Style: LyricSecondary,${secondaryFont},${secondarySize},${assColor(style.secondary.color)},${assColor(style.secondary.color)},${assColor(style.secondary.outline)},${assColor(style.panel.color, style.panel.alpha)},0,0,0,0,100,100,0,0,3,${Math.max(2, Math.round(c.height * 0.004))},0,2,${Math.round(c.width * 0.08)},${Math.round(c.width * 0.08)},${margin},1`,
+    `Style: ChapterCard,${font},${Math.round(c.height * 0.032)},${assColor(style.panel.accent)},${assColor(style.panel.accent)},${assColor(style.panel.border)},${assColor(style.panel.color, Math.min(0.94, style.panel.alpha + 0.06))},1,0,0,0,100,100,0,0,3,${Math.max(2, Math.round(c.height * 0.004))},0,${style.chapter.position === 'top' ? 7 : 1},${Math.round(c.width * 0.06)},${Math.round(c.width * 0.06)},${Math.round(c.height * 0.08)},1`,
+    `Style: PanelNotice,${font},${introSize},${assColor(style.panel.accent)},${assColor(style.panel.accent)},${assColor(style.panel.border)},${assColor(style.panel.color, style.panel.alpha)},0,0,0,0,100,100,0,0,3,${Math.max(2, Math.round(c.height * 0.004))},0,8,${Math.round(c.width * 0.08)},${Math.round(c.width * 0.08)},${Math.round(c.height * 0.06)},1`
+  ];
+  const dialogue = [];
+  if (style.chapter.show) {
+    for (const chapter of timeline.chapters ?? []) {
+      const end = Math.min(chapter.end, chapter.start + style.chapter.duration, timeline.duration);
+      if (end > chapter.start) dialogue.push(`Dialogue: 3,${assTime(chapter.start)},${assTime(end)},ChapterCard,,0,0,0,,${assText(chapter.title)}`);
+    }
+  }
+  if (timeline.notice) dialogue.push(`Dialogue: 1,0:00:00.00,${assTime(timeline.noticeEnd)},PanelNotice,,0,0,0,,${assText(timeline.notice)}`);
+  for (const cue of timeline.captions) {
+    const english = style.lines > 1 && cue.en ? `\\N{\\rLyricSecondary\\fs${secondarySize}}${assText(cue.en)}` : '';
+    dialogue.push(`Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},LyricPanel,,0,0,0,,{\\an2\\pos(${x},${y})}${assText(cue.zh)}${english}`);
+  }
+  if (c.audioPath && c.audioRecord?.provenance !== 'original' && c.audioRecord?.credit?.trim()) {
+    const credit = `音乐：${c.audioRecord.credit}${c.audioRecord.license ? `｜${c.audioRecord.license}` : ''}`;
+    dialogue.push(`Dialogue: 2,${assTime(Math.max(0, c.duration - 4))},${assTime(c.duration)},PanelNotice,,0,0,0,,{\\an8\\pos(${x},${Math.round(c.height * 0.16)})}${assText(credit)}`);
+  }
+  return { lines, dialogue };
+}
 
 export function createASS(c) {
   const timeline = c.timeline ?? { captions: CAPTIONS, notice: '演示时点 · 原创合成节奏', noticeEnd: 2.2 };
+  const captionStyle = timeline.captionStyle ?? DEFAULT_CAPTION_STYLE;
+  if (captionStyle.mode === 'scene-panel') {
+    const styleInfo = scenePanelASS(c, timeline, captionStyle);
+    const header = [
+      '[Script Info]', 'Title: 未抵达的灯 · 原创12秒模板', 'ScriptType: v4.00+', `PlayResX: ${c.width}`, `PlayResY: ${c.height}`, 'ScaledBorderAndShadow: yes', 'WrapStyle: 2', '',
+      '[V4+ Styles]', 'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+      ...styleInfo.lines, ''
+    ];
+    return [...header, '[Events]', 'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text', ...styleInfo.dialogue].join('\n') + '\n';
+  }
   const size = Math.round(c.height * 0.041), enSize = Math.round(c.height * 0.029), margin = Math.round(c.height * 0.07), x = Math.round(c.width / 2), y = c.height - margin;
   const introSize = Math.round(c.height * 0.025);
   const lines = [

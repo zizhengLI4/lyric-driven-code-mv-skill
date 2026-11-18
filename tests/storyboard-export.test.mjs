@@ -29,6 +29,8 @@ const fixture = () => {
   data.music.beats = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
   data.music.sections = [{ id: 'a', start: 0, end: 1.5 }, { id: 'b', start: 1.5, end: 4 }];
   data.lyrics = [{ id: 'new-line', start: 0.2, end: 1.2, text: '新的分镜字幕', en: 'A new cue.' }];
+  delete data.captionStyle;
+  delete data.chapters;
   return data;
 };
 const setup = async (t, data = fixture()) => {
@@ -140,6 +142,47 @@ test('JSON改变实际边界、转场、字幕与项目时长，拒绝CLI冲突�
   await assert.rejects(() => exporter.loadProject(exporter.parseArgs(['--storyboard', path, '--fps', '30'])), /冲突/);
   data.scenes[0].id = 'no-draw-handler'; await writeFile(path, JSON.stringify(data));
   await assert.rejects(() => exporter.loadProject(exporter.parseArgs(['--storyboard', path])), /画法|镜头/);
+});
+
+test('像素歌词面板样式贯穿时间线和ASS，并保留章节牌', async t => {
+  const data = fixture();
+  data.captionStyle = {
+    mode: 'scene-panel',
+    placement: 'integrated',
+    lines: 2,
+    primary: { color: '#FFF1D6', outline: '#E56B7A', shadow: '#24152B' },
+    secondary: { color: '#F3C8C7' },
+    panel: { color: '#24152B', alpha: 0.88, border: '#F0A06D', accent: '#FFD58A' },
+    chapter: { show: true, position: 'top' }
+  };
+  data.chapters = [{ id: 'chapter-one', start: 0, end: 4, title: '圣诞星', meaning: '雪夜里的章节牌' }];
+  const { path } = await setup(t, data);
+  const exporter = await import(new URL('export.mjs', base));
+  const c = await exporter.loadProject(exporter.parseArgs(['--storyboard', path]));
+  assert.equal(c.timeline.captionStyle.mode, 'scene-panel');
+  assert.equal(c.timeline.captionStyle.placement, 'integrated');
+  assert.equal(c.timeline.chapters[0].title, '圣诞星');
+  const ass = exporter.createASS(c);
+  assert.match(ass, /Style: LyricPanel,/);
+  assert.match(ass, /Style: LyricSecondary,/);
+  assert.match(ass, /Style: ChapterCard,/);
+  assert.match(ass, /Dialogue: 0,0:00:00\.20,0:00:01\.20,LyricPanel/);
+  assert.match(ass, /Style: LyricPanel,[^\n]*&H00D6F1FF/);
+  assert.match(ass, /圣诞星/);
+  assert.match(ass, /\\fs\d+/);
+});
+
+test('像素歌词面板配置拒绝未知模式和无效颜色', async t => {
+  const exporter = await import(new URL('export.mjs', base));
+  for (const captionStyle of [
+    { mode: 'subtitle-only' },
+    { mode: 'scene-panel', primary: { color: 'warm-white' } },
+    { mode: 'scene-panel', panel: { alpha: 2 } }
+  ]) {
+    const data = fixture(); data.captionStyle = captionStyle;
+    const { path } = await setup(t, data);
+    await assert.rejects(() => exporter.loadProject(exporter.parseArgs(['--storyboard', path])), /captionStyle|歌词样式|颜色|alpha|mode/);
+  }
 });
 
 test('draft自动全时段标识，真实歌曲必须输入音轨，恢复拒绝更换JSON或音频内容', async t => {
