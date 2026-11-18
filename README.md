@@ -277,7 +277,7 @@ node work/my-mv/export.mjs --storyboard work/storyboard.json --audio 'path/to/so
 node skills/lyric-driven-code-mv/scripts/qa.mjs work/my-mv/frame.mjs --storyboard work/storyboard.json --out work/song-qa.json
 ```
 
-模板通过 `SCENE_RENDERERS[scene.id]` 选择画法；内置 `send` 与 `receive`，新增故事镜头时由 AI 实现对应画法。真实歌曲的字幕和时窗只修改 JSON，`draft` 状态自动烧入“待核对落点”提示；音频为原曲时按 `project.sourceOffset` 裁剪。预览、音轨时基与恢复规则见 [starter README](skills/lyric-driven-code-mv/assets/templates/starter/README.md)。
+模板通过 `SCENE_RENDERERS[scene.id]` 选择画法；内置 `send` 与 `receive`，新增故事镜头时由 AI 实现对应画法。真实歌曲的字幕和时窗只修改 JSON；音频为原曲时按 `project.sourceOffset` 裁剪。成片默认不烧草稿水印（`draft` 也不烧，要成片内可见提示须显式写 `project.draftMark:true`），核对进度由导出资产清单记录。预览、音轨时基与恢复规则见 [starter README](skills/lyric-driven-code-mv/assets/templates/starter/README.md)。
 
 ## 开发与检查
 
