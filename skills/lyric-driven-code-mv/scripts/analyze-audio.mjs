@@ -8,6 +8,22 @@ const MAX_SECONDS = 600;
 const ABSOLUTE_RMS_FLOOR = 1e-5;
 const round = value => Math.round(value * 1e6) / 1e6;
 const clamp01 = value => Math.max(0, Math.min(1, value));
+// 网格拟合只看打击乐硬证据：按 strength 取前 40%，弱起音会把任何网格都拉平。
+const STRONG_ONSET_SHARE = 0.4;
+// 「拟合优秀」的独立门槛：中位误差不超过 60 ms，且 40 ms 内占比至少 40%。
+const STRONG_FIT_MEDIAN_MS = 60;
+const STRONG_FIT_WITHIN40 = 0.4;
+// 整数倍关系容差 4%：半速/双速是最常见的误判，必须两个都报出来。
+const BEAT_MULTIPLES = [[2, 'double'], [0.5, 'half'], [3, 'triple'], [1 / 3, 'third']];
+
+/**
+ * 选优权重。拟合误差是主项：起音间隔投票只说明「这个间隔出现过几次」，
+ * 拟合说明「这个网格能不能解释音乐里真实落下的重音」。
+ */
+const FIT_WEIGHT = 0.6;
+const VOTE_WEIGHT = 0.2;
+const AUTOCORRELATION_WEIGHT = 0.12;
+const ALIGNMENT_WEIGHT = 0.08;
 
 function finiteOption(value, name, { positive = false } = {}) {
   if (typeof value !== 'number' || !Number.isFinite(value) || (positive ? value <= 0 : value < 0)) {
@@ -29,6 +45,96 @@ function validateBpmOptions({ bpm, bpmSource, bpmEvidence }) {
   if (bpmSource !== undefined && !['user-provided', 'metadata'].includes(bpmSource)) throw new Error('BPM 来源 bpmSource 必须为 user-provided 或 metadata。');
   if (bpmEvidence !== undefined && (typeof bpmEvidence !== 'string' || !bpmEvidence.trim())) throw new Error('BPM 依据 bpmEvidence 必须为非空文字。');
   if (bpmSource === 'metadata' && !bpmEvidence?.trim()) throw new Error('metadata BPM 必须提供 --bpm-evidence / bpmEvidence，记录曲目页或元数据依据。');
+}
+
+/** 强起音子集：按 strength 降序取前 share，再按时间排回。样本太少时原样返回。 */
+function strongOnsetSubset(onsets, share = STRONG_ONSET_SHARE) {
+  if (onsets.length <= 4) return onsets.slice();
+  const ranked = [...onsets].sort((a, b) => b.strength - a.strength || a.at - b.at);
+  const count = Math.max(4, Math.round(onsets.length * share));
+  return ranked.slice(0, count).sort((a, b) => a.at - b.at);
+}
+
+/** 单个起音到最近网格点的绝对距离（毫秒），网格 = phase + n * period。 */
+function gridDistanceMs(at, phaseSeconds, periodSeconds) {
+  const relative = at - phaseSeconds;
+  return Math.abs(relative - Math.round(relative / periodSeconds) * periodSeconds) * 1000;
+}
+
+/**
+ * 用强起音检验一个 BPM/相位网格：每个起音到最近网格点的距离取中位数与命中率。
+ * 这是「这个网格解释得了音乐吗」的直接证据，与间隔投票是两件事。
+ */
+function onsetGridFit(strong, bpm, phaseSeconds) {
+  const period = 60 / bpm;
+  if (!strong.length) return { medianMs: null, p90Ms: null, within40ms: 0, within80ms: 0, samples: 0 };
+  const distances = strong.map(onset => gridDistanceMs(onset.at, phaseSeconds, period)).sort((a, b) => a - b);
+  const quantile = ratio => distances[Math.min(distances.length - 1, Math.max(0, Math.round((distances.length - 1) * ratio)))];
+  const share = limit => round(distances.filter(distance => distance <= limit).length / distances.length);
+  return {
+    medianMs: round(quantile(0.5)),
+    p90Ms: round(quantile(0.9)),
+    within40ms: share(40),
+    within80ms: share(80),
+    samples: distances.length,
+  };
+}
+
+/**
+ * 拟合分数：中位误差越小越高，并把 40 ms 命中率并入。
+ * 快速网格天然更容易「碰到」起音，所以分数以绝对毫秒为准，不做周期归一化。
+ */
+function onsetFitScore(onsetFit) {
+  if (!onsetFit?.samples || onsetFit.medianMs === null) return 0;
+  const closeness = clamp01(1 - onsetFit.medianMs / 150);
+  return round(0.6 * clamp01(onsetFit.within40ms) + 0.4 * closeness);
+}
+
+/** 拟合是否够硬：中位误差 ≤60 ms 且 40 ms 命中率 ≥40%。 */
+function hasStrongFit(candidate) {
+  const fit = candidate?.onsetFit;
+  return Boolean(fit?.samples) && fit.medianMs !== null && fit.medianMs <= STRONG_FIT_MEDIAN_MS && fit.within40ms >= STRONG_FIT_WITHIN40;
+}
+
+/**
+ * 与最优候选成整数倍关系的候选（半速/双速最常见）。
+ * 两个网格都能解释音乐时只报一个会误导；这里把对手连拟合数字一起列出。
+ * 已经落在候选范围内的整数倍网格即使没有自己的簇也直接探测一次，避免「没投票就没数字」。
+ */
+function multipleRivals(best, clusters, probe) {
+  const rivals = [];
+  const seen = new Set();
+  for (const candidate of clusters) {
+    if (candidate.bpm === best.bpm) continue;
+    const ratio = candidate.bpm / best.bpm;
+    const multiple = BEAT_MULTIPLES.find(([factor]) => Math.abs(ratio - factor) <= factor * 0.04);
+    if (!multiple || seen.has(multiple[1])) continue;
+    seen.add(multiple[1]);
+    const fit = candidate.onsetFit;
+    rivals.push({
+      bpm: round(candidate.bpm), relation: multiple[1], ratio: round(ratio), vote: round(candidate.vote ?? 0),
+      onsetFit: fit, fitScore: round(candidate.fitScore ?? onsetFitScore(fit)),
+      fitAcceptable: hasStrongFit(candidate), source: 'cluster',
+      status: hasStrongFit(candidate) ? 'rival-grid-also-fits' : 'weaker-grid',
+    });
+  }
+  if (typeof probe === 'function') {
+    for (const [factor, relation] of BEAT_MULTIPLES) {
+      if (seen.has(relation)) continue;
+      const bpm = round(best.bpm * factor);
+      // 候选范围外的倍数不给数字：更快的网格天然更容易碰到起音，那会变成假证据。
+      if (bpm < 45 || bpm > 200) continue;
+      const probed = probe(bpm);
+      seen.add(relation);
+      rivals.push({
+        bpm, relation, ratio: round(factor), vote: null,
+        onsetFit: probed.onsetFit, fitScore: probed.fitScore,
+        fitAcceptable: hasStrongFit(probed), source: 'grid-probe',
+        status: hasStrongFit(probed) ? 'rival-grid-also-fits' : 'weaker-grid',
+      });
+    }
+  }
+  return rivals.sort((a, b) => b.fitScore - a.fitScore || a.bpm - b.bpm);
 }
 
 function phaseFit(onsets, bpm) {
@@ -69,26 +175,34 @@ function periodicityAt(novelty, lag) {
 function estimateTempo(onsets, novelty, hopSeconds, duration, peakRms, options) {
   const source = options.bpm === undefined ? 'audio-analysis' : options.bpmSource ?? 'user-provided';
   const evidence = {
-    method: options.bpm === undefined ? '起音间隔投票、±3% 邻近候选聚类、包络自相关与相位拟合。' : '采用已提供的 BPM，仅用片段起音拟合相位。',
+    method: options.bpm === undefined ? '起音间隔投票、±3% 邻近候选聚类、包络自相关与相位拟合，再用强起音（strength 前 40%）做网格拟合验证后选优。' : '采用已提供的 BPM，仅用片段起音拟合相位，并报告强起音网格拟合误差。',
     bpm: options.bpmEvidence?.trim() ?? (options.bpm === undefined ? '离线音频候选；没有外部 BPM 依据。' : `用户提供 ${options.bpm} BPM。`),
     limitations: '启发式证据未经真实歌曲标定；BPM 来源不证明拍号、歌词对齐或人工核对，半速/双速与弱拍仍需听辨。',
   };
-  const empty = reason => ({ bpm: null, status: 'unavailable', source, confidence: 0, periodSeconds: null, phaseSeconds: null, candidates: [], clusters: [], ambiguities: [], evidence, ...(options.bpm === undefined ? {} : { requestedBpm: options.bpm }), reason });
+  const empty = reason => ({ bpm: null, status: 'unavailable', source, confidence: 0, periodSeconds: null, phaseSeconds: null, onsetFit: null, fitScore: null, candidates: [], clusters: [], ambiguities: [], rivalGrids: [], evidence, ...(options.bpm === undefined ? {} : { requestedBpm: options.bpm }), reason });
   if (peakRms < ABSOLUTE_RMS_FLOOR) return empty('静音或能量低于绝对证据阈值。');
   if (onsets.length < 5 || duration < 3) return empty('片段过短或起音候选不足 5 个。');
 
+  const strongOnsets = strongOnsetSubset(onsets);
   const correlations = new Map();
   const fit = bpm => {
     const lag = Math.round(60 / bpm / hopSeconds);
     if (!correlations.has(lag)) correlations.set(lag, periodicityAt(novelty, lag));
-    return { bpm, ...phaseFit(onsets, bpm), ...correlations.get(lag) };
+    const phased = { bpm, ...phaseFit(onsets, bpm), ...correlations.get(lag) };
+    const fitResult = onsetGridFit(strongOnsets, bpm, phased.phaseSeconds);
+    return { ...phased, onsetFit: fitResult, fitScore: onsetFitScore(fitResult) };
   };
-  const usableSignal = candidate => onsets.length / (duration * candidate.bpm / 60) >= 0.2 && candidate.periodicity >= 0.05;
+  // Coverage keeps a grid from being finer than the evidence; periodicity OR a directly fitted grid proves the signal.
+  const usableSignal = candidate => onsets.length / (duration * candidate.bpm / 60) >= 0.2 && (candidate.periodicity >= 0.05 || hasStrongFit(candidate));
+  /** 直接给一个 BPM 算网格：用于没有自己簇的整数倍对手（半速/双速）。 */
+  const probeBpm = bpm => (Number.isFinite(bpm) && bpm > 0 ? fit(bpm) : null);
   const selected = (candidate, candidates, clusters, confidence, status, reason) => ({
     bpm: candidate.bpm, status, source, confidence: round(confidence),
     periodSeconds: 60 / candidate.bpm, phaseSeconds: candidate.phaseSeconds,
     alignment: candidate.alignment, autocorrelation: candidate.autocorrelation, periodicity: candidate.periodicity,
+    onsetFit: candidate.onsetFit, fitScore: candidate.fitScore,
     candidates, clusters, evidence,
+    rivalGrids: multipleRivals(candidate, clusters, probeBpm),
     ambiguities: [{ bpm: candidate.bpm / 2, relation: 'half' }, { bpm: candidate.bpm * 2, relation: 'double' }], reason,
   });
   if (options.bpm !== undefined) {
@@ -125,7 +239,7 @@ function estimateTempo(onsets, novelty, hopSeconds, duration, peakRms, options) 
   for (const bin of bins.values()) {
     const candidate = fit(bin.bpm);
     const vote = bin.weight / maxWeight;
-    const score = 0.55 * vote + 0.25 * candidate.autocorrelation + 0.2 * candidate.alignment;
+    const score = FIT_WEIGHT * candidate.fitScore + VOTE_WEIGHT * vote + AUTOCORRELATION_WEIGHT * candidate.autocorrelation + ALIGNMENT_WEIGHT * candidate.alignment;
     candidates.push({ ...candidate, vote: round(vote), intervalVotes: bin.intervalVotes, score });
   }
   candidates.sort((a, b) => b.score - a.score || b.vote - a.vote || a.bpm - b.bpm);
@@ -151,14 +265,14 @@ function estimateTempo(onsets, novelty, hopSeconds, duration, peakRms, options) 
   const maxClusterWeight = Math.max(...groups.map(group => group.weight));
   const clusters = groups.map(({ weight, ...group }) => {
     const vote = round(weight / maxClusterWeight);
-    return { ...group, vote, score: 0.55 * vote + 0.25 * group.autocorrelation + 0.2 * group.alignment };
+    return { ...group, vote, score: FIT_WEIGHT * group.fitScore + VOTE_WEIGHT * vote + AUTOCORRELATION_WEIGHT * group.autocorrelation + ALIGNMENT_WEIGHT * group.alignment };
   }).sort((a, b) => b.score - a.score || a.bpm - b.bpm);
   const publicClusters = clusters.slice(0, 8).map(({ score, ...cluster }) => cluster);
   const best = clusters.find(candidate => usableSignal(candidate) && candidate.autocorrelation >= 0.15 && candidate.intervalVotes >= 8 && candidate.vote >= 0.2);
   if (!best) return { ...empty('候选投票或去均值周期一致性不足；请人工听辨。'), candidates: publicCandidates, clusters: publicClusters };
   const confidence = clamp01(0.45 * best.alignment + 0.35 * best.autocorrelation + 0.2 * best.vote);
   const strong = best.alignment >= 0.6 && best.autocorrelation >= 0.2 && confidence >= 0.6;
-  return selected(best, publicCandidates, publicClusters, strong ? confidence : Math.min(0.59, confidence), strong ? 'estimated' : 'low-confidence', strong ? '邻近候选的周期与相位共同支持网格；仍需人工核对半速/双速。' : '间隔投票与周期证据支持候选，但相位或自相关偏弱；网格仅供 draft 分镜试排与人工复核。');
+  return selected(best, publicCandidates, publicClusters, strong ? confidence : Math.min(0.59, confidence), strong ? 'estimated' : 'low-confidence', strong ? '邻近候选的周期与相位共同支持网格；仍需人工核对半速/双速。' : '强起音网格拟合与间隔投票共同支持该候选，但相位或自相关偏弱；网格仅供 draft 分镜试排与人工复核。');
 }
 
 /** Analyze already-cut mono PCM. sourceOffset is metadata; every returned time uses the clip clock. */

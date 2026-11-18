@@ -17,6 +17,7 @@ import json
 import math
 import os
 import random
+import shutil
 import subprocess
 import sys
 
@@ -462,17 +463,40 @@ def main(argv):
 
     os.makedirs("work", exist_ok=True)
     out = "work/silent.mp4"
+    if not shutil.which("ffmpeg"):
+        raise SystemExit("找不到 ffmpeg，请先安装并确认它在 PATH 上（本脚本靠它把裸帧编成 MP4）。")
     cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
            "-s", f"{p['width']}x{p['height']}", "-r", str(p["fps"]), "-i", "-",
            "-an", "-c:v", "libx264", "-preset", "medium", "-crf", "18",
            "-pix_fmt", "yuv420p", out]
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    for i in range(total):
-        proc.stdin.write(render_frame(i, sbc).tobytes())
-        if i % 60 == 0:
-            print(f"  第 {i}/{total} 帧", flush=True)
-    proc.stdin.close()
-    proc.wait()
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        for i in range(total):
+            proc.stdin.write(render_frame(i, sbc).tobytes())
+            if i % 60 == 0:
+                print(f"  第 {i}/{total} 帧", flush=True)
+        proc.stdin.close()
+    except (BrokenPipeError, OSError) as exc:
+        # 实测（Windows + Python 3.13）：编码器名错、输出目录不存在、输入缺失、
+        # 参数非法、滤镜不存在这五种「ffmpeg 立刻退出」，往管道写抛的都是
+        # BrokenPipeError([Errno 32])——它本身就是 OSError 的子类，所以这两个都接得住。
+        # 真正的坑是「catch 了却不读 stderr」：只拿到一句没有上下文的 Broken pipe，
+        # 看不出 ffmpeg 为什么退出，前面渲染的帧还全白费。
+        try:
+            proc.stdin.close()
+        except OSError:
+            pass
+        code = proc.wait()
+        detail = proc.stderr.read().decode("utf-8", "replace").strip()
+        raise SystemExit(
+            "写入 FFmpeg 管道失败（%s: %s）。FFmpeg 退出码 %s。\n%s\n"
+            "常见原因是参数被拒、编码器缺失或输出路径不可写；已渲染的 %d 帧不保留，修好后重跑。"
+            % (type(exc).__name__, exc, code, detail[-600:] or "(ffmpeg 没有输出报错)",
+               total)
+        )
+    if proc.wait() != 0:
+        detail = proc.stderr.read().decode("utf-8", "replace").strip()
+        raise SystemExit("FFmpeg 异常退出（码 %s）：\n%s" % (proc.returncode, detail[-600:]))
     print(f"完成：{out}（{total} 帧）。下一步用 ffmpeg 把它和歌曲合成。")
 
 

@@ -126,7 +126,13 @@ test('unknown props report the complete allowed-value list alongside all validat
   const { analyzeStoryboard } = await importSkill('scripts/validate-storyboard.mjs');
   const data = JSON.parse(readFileSync(resolveSkill('assets/storyboard-example.json'), 'utf8'));
   data.scenes[0].props.push('空椅');
-  data.scenes[1].props.push('未知道具');
+  // 示例只有一镜，补一个派生镜，让第二个错误落在 scenes[1] 上。
+  const extra = { ...structuredClone(data.scenes[0]), id: 'reply', start: 24, end: 30, events: [], hud: [], props: ['未知道具'], meaning: '第二镜', lyricIds: [] };
+  data.scenes.push(extra);
+  data.project.duration = 30;
+  data.chapters[data.chapters.length - 1].end = 30;
+  data.music.beats = data.music.beats.filter(b => b < 30);
+  data.music.sections[data.music.sections.length - 1].end = 30;
   data.scenes[0].meaning = '';
   const { errors } = analyzeStoryboard(data);
   assert.equal(errors.length, 3);
@@ -169,4 +175,101 @@ test('composition QA reports low subject area, low luminance, and dominant-color
   assert.ok(result.meanLuminance < 30);
   assert.ok(result.dominantColorFraction > 0.6);
   assert.equal(result.warnings.length, 3);
+});
+
+// —— 渲染核心合并后的回归：唯一实现、subject 夹取、调色板显式传参、场景真源 ——
+
+const sceneIds = ['window', 'leave', 'empty', 'turn', 'neon', 'street', 'shatter', 'lesson', 'night', 'dawn', 'path', 'lookback'];
+const frameCore = () => importSkill('assets/frame-core.mjs');
+
+test('starter 与 12 个场景资产共用同一份 frame-core.mjs，两侧都不再自带 FB', async () => {
+  const core = await frameCore();
+  const starter = await importSkill('assets/templates/starter/frame.mjs');
+  assert.equal(starter.FB, core.FB, 'starter 的 FB 必须就是 frame-core 的 FB');
+  assert.equal(typeof core.FB.prototype.glow, 'function');
+  assert.equal(typeof core.FB.prototype.layer, 'function');
+  for (const path of ['assets/templates/starter/frame.mjs', 'assets/scenes/shared.mjs']) {
+    const source = readFileSync(resolveSkill(path), 'utf8');
+    assert.match(source, /frame-core\.mjs/, `${path} 必须 import frame-core.mjs`);
+    assert.doesNotMatch(source, /class FB\b/, `${path} 不应再自带 FB 实现`);
+    // 只允许转发式壳：出现转场分支或自建混合缓冲就说明又抄了一份实现
+    assert.doesNotMatch(source, /exit\.type === 'ripple'/, `${path} 不应再自带转场实现`);
+    assert.doesNotMatch(source, /new Uint8ClampedArray\(previous\.data\.length\)/, `${path} 不应再自建转场缓冲`);
+  }
+  // 场景层与成片层拿到的是同一个构造器：用 core 造的帧和 starter 造的帧同型
+  const frame = new core.FB(8, 8).frame();
+  assert.equal(frame.data.constructor, new starter.FB(8, 8).frame().data.constructor);
+});
+
+test('FB.layer 的 underlay 语义在 frame-core 中唯一实现，neon 画法真的用它定序', async () => {
+  const { FB } = await frameCore();
+  const fb = new FB(48, 48);
+  fb.layer({
+    subject: target => target.rect(180, 96, 24, 24, [240, 20, 30]),
+    glow: target => target.glow(192, 108, 22, [250, 180, 20]),
+  });
+  const center = (24 * fb.width + 24) * 4;
+  const outside = (24 * fb.width + 27) * 4;
+  assert.deepEqual([...fb.data.subarray(center, center + 3)], [240, 20, 30], 'subject 必须盖在 glow 之上');
+  assert.ok(fb.data[outside] > 0 || fb.data[outside + 1] > 0 || fb.data[outside + 2] > 0, '光晕必须在主体之外可见');
+  assert.match(readFileSync(resolveSkill('assets/scenes/neon.mjs'), 'utf8'), /fb\.layer\(/);
+});
+
+test('subject 愿望值超出摄像机范围时夹取并只提示一次，不再抛错', async () => {
+  const { resetCameraWarnings } = await frameCore();
+  const { createNeonScene } = await importSkill('assets/scenes/neon.mjs');
+  const warnings = [], original = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try {
+    resetCameraWarnings();
+    const scene = createNeonScene({ subject: { x: 100, y: 100 } });
+    for (const local of [1, 2]) {
+      const frame = scene.render(local, { width: 64, height: 36, seed: 'fixture' });
+      assert.equal(frame.width, 64); assert.equal(frame.height, 36); assert.equal(frame.data.length, 64 * 36 * 4);
+    }
+    assert.equal(warnings.length, 1, '夹取只提示一次，避免逐帧刷屏');
+    assert.match(warnings[0], /夹取/);
+    assert.match(warnings[0], /实际 x=264/);
+    resetCameraWarnings();
+    createNeonScene({}).render(1, { width: 64, height: 36, seed: 'fixture' });
+    assert.equal(warnings.length, 1, '默认取景不越界，不应提示');
+  } finally { console.warn = original; }
+});
+
+test('调色板是显式参数：交替渲染不同 palette 的资产互不污染', async () => {
+  const { createNeonScene } = await importSkill('assets/scenes/neon.mjs');
+  const render = scene => scene.render(4, { width: 384, height: 216, seed: 'palette' });
+  const pink = render(createNeonScene({ palette: { neon: [255, 0, 0] } }));
+  const blue = render(createNeonScene({ palette: { neon: [0, 0, 255] } }));
+  const pinkAgain = render(createNeonScene({ palette: { neon: [255, 0, 0] } }));
+  assert.notDeepEqual([...pink.data], [...blue.data], 'palette 覆盖必须真的改变画面');
+  assert.deepEqual([...pink.data], [...pinkAgain.data], '同一 palette 必须逐像素可复现');
+  assert.throws(() => createNeonScene({ palette: { nope: [1, 2, 3] } }), /未知调色板键/);
+  const source = readFileSync(resolveSkill('assets/scenes/shared.mjs'), 'utf8');
+  assert.doesNotMatch(source, /let\s+P\s*=/, '不允许再出现模块级可变调色板');
+  assert.match(source, /draw\(fb, t, seed, palette\)/);
+});
+
+test('12 个场景各自持有画法，SCENE_RENDERERS 由模块注册而不是下标查表', async () => {
+  const index = await importSkill('assets/scenes/index.mjs');
+  const { SCENE_RENDERERS } = await importSkill('assets/scenes/core.mjs');
+  assert.deepEqual([...index.SCENE_IDS].sort(), [...sceneIds].sort());
+  for (const id of sceneIds) {
+    assert.equal(typeof index.SCENE_FACTORIES[id], 'function', `${id} 必须有工厂`);
+    assert.equal(typeof SCENE_RENDERERS[id], 'function', `${id} 必须注册成片渲染器`);
+    const frame = SCENE_RENDERERS[id](2, { width: 48, height: 27, seed: 'registry' });
+    assert.equal(frame.data.length, 48 * 27 * 4);
+    assert.ok(frame.data.some((n, i) => i % 4 !== 3 && n > 0), `${id} 的成片渲染不应是空帧`);
+    // 每个模块只画自己的那一个镜头：换 id 的画法不会跟着变
+    const module = await importSkill(`assets/scenes/${id}.mjs`);
+    assert.equal(module[`create${id[0].toUpperCase()}${id.slice(1)}Scene`]({}).id, id);
+  }
+  const core = readFileSync(resolveSkill('assets/scenes/core.mjs'), 'utf8');
+  assert.doesNotMatch(core, /DRAW\s*=/, 'core.mjs 不应再有 DRAW 下标表');
+  assert.doesNotMatch(core, /SCENE_IDS\.indexOf/, 'core.mjs 不应再按 id 反查下标');
+  for (const id of sceneIds) {
+    const before = SCENE_RENDERERS[id](1, { width: 32, height: 18, seed: 'own' });
+    const other = SCENE_RENDERERS[sceneIds.find(other => other !== id)](1, { width: 32, height: 18, seed: 'own' });
+    assert.notDeepEqual([...before.data], [...other.data], `${id} 不应与其它镜头画出同一帧`);
+  }
 });

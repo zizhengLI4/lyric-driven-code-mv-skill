@@ -3,7 +3,7 @@
   "timebase": "clip",
   "project": {
     "fps": 30,
-    "duration": 12,
+    "duration": 24,
     "sourceOffset": 0,
     "width": 1920,
     "height": 1080,
@@ -19,39 +19,38 @@
       "use": "demo"
     }
   },
-  "note": "原创演示文案、代码合成节奏与演示时点。starter --storyboard直接读取项目、字幕、镜头边界与转场；scene.id对应SCENE_RENDERERS画法，事件动作由画法实现。",
+  "note": "长镜头示范：主镜 send 是 0–24 秒的一镜，机位全程不动，靠三次可读变化撑住——4.5 秒 HUD 按 delta 下降一次，9.0 秒与 17.2 秒字幕各换一行（0.8 秒的第一行只是建立基线）。判据是可读变化而不是秒数，所以 24 秒不需要切成四个 6 秒的镜头；旧版「一镜 4–8 秒」的写法已作废。24 秒后的 receive 只有 2 秒，是结尾结算牌，只收束结果、不新增读数变化，也不参与长镜头判据。starter --storyboard 直接读取项目、字幕、镜头与转场；scene.id 对应 SCENE_RENDERERS 画法，事件动作由画法实现。",
   "device": {
     "id": "river-message-system",
     "type": "game-system",
     "name": "隔岸寄送系统",
     "purpose": "把主动发送、未抵达和灯光回应呈现为可读状态"
   },
+  "lyricsMeta": {
+    "source": "template-authored",
+    "ref": "assets/storyboard-example.json",
+    "fetchedAt": "2026-11-17T14:45:00+08:00",
+    "proofread": true
+  },
   "lyrics": [
     {
       "id": "line-1",
-      "start": 0.45,
-      "end": 2.8,
+      "start": 0.8,
+      "end": 8.6,
       "text": "送一盏小灯到对岸",
       "en": "Send a small light across."
     },
     {
-      "id": "line-water",
-      "start": 3,
-      "end": 5,
+      "id": "line-2",
+      "start": 9,
+      "end": 16.8,
       "text": "水流拐弯，我松开手",
       "en": "The current turns; I let it go."
     },
     {
-      "id": "line-2",
-      "start": 6.3,
-      "end": 8.5,
-      "text": "送一盏小灯到对岸",
-      "en": "Send a small light across."
-    },
-    {
-      "id": "line-reply",
-      "start": 8.7,
-      "end": 11.7,
+      "id": "line-3",
+      "start": 17.2,
+      "end": 23.4,
       "text": "未能抵达，也有回光",
       "en": "Still apart, our lights reply."
     }
@@ -87,18 +86,42 @@
       10,
       10.5,
       11,
-      11.5
+      11.5,
+      12,
+      12.5,
+      13,
+      13.5,
+      14,
+      14.5,
+      15,
+      15.5,
+      16,
+      16.5,
+      17,
+      17.5,
+      18,
+      18.5,
+      19,
+      19.5,
+      20,
+      20.5,
+      21,
+      21.5,
+      22,
+      22.5,
+      23,
+      23.5
     ],
     "sections": [
       {
         "id": "first-phrase",
         "start": 0,
-        "end": 6
+        "end": 12
       },
       {
-        "id": "repeat-phrase",
-        "start": 6,
-        "end": 12
+        "id": "reply-phrase",
+        "start": 12,
+        "end": 24
       }
     ]
   },
@@ -123,28 +146,41 @@
     "far-lamp"
   ],
   "chapters": [
-    { "id": "send-chapter", "start": 0, "end": 6, "title": "第一次发送", "meaning": "主动靠近后等待" },
-    { "id": "reply-chapter", "start": 6, "end": 12, "title": "收到回光", "meaning": "未抵达但留下回应" }
+    {
+      "id": "send-chapter",
+      "start": 0,
+      "end": 12,
+      "title": "第一次发送",
+      "meaning": "主动靠近后等待，HUD 读数开始下降"
+    },
+    {
+      "id": "reply-chapter",
+      "start": 12,
+      "end": 24,
+      "title": "收到回光",
+      "meaning": "未抵达但留下回应"
+    }
   ],
   "scenes": [
     {
       "id": "send",
       "start": 0,
-      "end": 6,
-      "meaning": "把心意送往远方，主动放手后等待",
-      "location": "左岸出发，同一条河的两岸",
-      "objective": "让载灯纸船抵达对岸",
-      "action": "p1 推船并松手，载灯纸船沿弯流向河心漂去",
-      "feedback": "纸船位移和水面倒影说明寄送开始，远岸灯仍暗",
-      "outcome": "纸船到达河心，尚未抵达；两岸人物仍分开",
-      "materialVariant": { "id": "night-water", "label": "夜水材质", "change": "水面高光随纸船移动，机位保持不变" },
-      "hud": [
-        { "id": "distance", "type": "bar", "label": "抵达距离", "value": 42, "min": 0, "max": 100, "meaning": "纸船行动有进展但尚未抵达" },
-        { "id": "send-status", "type": "status", "label": "状态", "value": "等待回应", "meaning": "行动结束后的关系反馈" }
-      ],
+      "end": 24,
+      "meaning": "把心意送往远方，主动放手后等待；24 秒里经历一次读数下降和两次字幕换行",
+      "location": "左岸出发，同一条河的两岸；机位全程不动",
+      "objective": "让载灯纸船抵达对岸，并让观众看清未抵达的结果",
+      "action": "p1 推船并松手，载灯纸船沿弯流漂向河心；p2 在右岸亮灯回应",
+      "feedback": "纸船位移、读数下降和远岸灯光说明寄送的进展与失败",
+      "outcome": "纸船到达河心，尚未抵达；两岸人物仍分开，只留下灯光联系",
+      "materialVariant": {
+        "id": "night-water",
+        "label": "夜水材质",
+        "change": "水面高光随纸船移动，机位保持不变"
+      },
       "lyricIds": [
         "line-1",
-        "line-water"
+        "line-2",
+        "line-3"
       ],
       "actors": [
         {
@@ -164,100 +200,38 @@
       ],
       "events": [
         {
-          "at": 1.3,
-          "action": "p1 开始松手，纸船离开左岸",
+          "at": 4.5,
+          "action": "p1 松手，纸船离开左岸；隔岸好感度按数值下降一次",
           "lyricIds": [
             "line-1"
-          ]
+          ],
+          "hud": {
+            "label": "隔岸好感度",
+            "unit": "%",
+            "value": 42,
+            "delta": -18
+          }
         },
         {
-          "at": 3,
-          "action": "纸船经过弯流，继续向河心漂移",
-          "lyricIds": [
-            "line-water"
-          ]
-        },
-        {
-          "at": 5,
-          "action": "保持纸船未抵达的结果，为切换视角留白"
-        }
-      ],
-      "exit": {
-        "type": "ripple",
-        "dur": 0.9,
-        "origin": [
-          0.55,
-          0.62
-        ]
-      },
-      "exitTransition": "波纹揭示右岸视角，下一镜固定 local=0 预卷"
-    },
-    {
-      "id": "receive",
-      "start": 6,
-      "end": 12,
-      "meaning": "重复寄送愿望，但对方未接到；新增隔岸回应的信息",
-      "location": "同一条河，摄像机略向右岸移动",
-      "objective": "p2 等纸船抵达并回应左岸",
-      "action": "p2 伸手，纸船被弯流推回；改用岸灯回应",
-      "feedback": "纸船回退，右岸灯亮起，水面产生两地光的联系",
-      "outcome": "纸船仍未抵达，两岸灯光隔水相望",
-      "hud": [
-        { "id": "reply-status", "type": "status", "label": "回应", "value": "灯光已亮", "meaning": "失败的寄送仍获得可见回应" },
-        { "id": "attempts", "type": "counter", "label": "发送次数", "value": 2, "meaning": "重复行动带来新的信息" }
-      ],
-      "lyricIds": [
-        "line-2",
-        "line-reply"
-      ],
-      "actors": [
-        {
-          "id": "p2",
-          "costume": "teal-coat"
-        },
-        {
-          "id": "p1",
-          "costume": "coral-coat"
-        }
-      ],
-      "props": [
-        "paper-boat",
-        "boat-light",
-        "near-lamp",
-        "far-lamp"
-      ],
-      "events": [
-        {
-          "at": 8.3,
-          "action": "p2 伸手尝试接船",
+          "at": 9,
+          "action": "字幕换行：纸船经过弯流，继续向河心漂移",
           "lyricIds": [
             "line-2"
           ]
         },
         {
-          "at": 9.1,
-          "action": "弯流使纸船在触岸前回退",
+          "at": 17.2,
+          "action": "字幕再换一行：p2 点亮岸灯，保持未抵达的事实",
           "lyricIds": [
-            "line-reply"
+            "line-3"
           ]
-        },
-        {
-          "at": 9.4,
-          "action": "p2 点亮岸灯回应，保持未抵达的事实",
-          "lyricIds": [
-            "line-reply"
-          ]
-        },
-        {
-          "at": 11.7,
-          "action": "字幕结束，留下河水与两岸灯光"
         }
       ],
       "exit": {
         "type": "cut",
         "dur": 0
       },
-      "exitTransition": "片段结束，无额外第三镜或黑场"
+      "exitTransition": "切到结尾结算牌，主镜本身不靠切镜制造变化"
     }
   ]
 }

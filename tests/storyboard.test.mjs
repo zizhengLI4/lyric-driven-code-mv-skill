@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +20,8 @@ function validStoryboard() {
     id, start, end, lyricIds,
     meaning: '保存共同的记忆', location: '雪地木屋', objective: '保留礼物',
     action: '把礼物放上搁板', feedback: '显示保留徽标', outcome: '礼物成为纪念物',
-    actors: [actor], props: ['gift'], events: [{ at: start + 1, action: 'raise-gift', hud: '保留' }],
+    // 事件 HUD 用结构化写法：字符串写法另有专门用例覆盖兼容性。
+    actors: [actor], props: ['gift'], events: [{ at: start + 1, action: 'raise-gift', hud: { label: '保留', value: 1, delta: 0 } }],
     exitTransition: 'pixel-wipe',
   });
   return {
@@ -761,4 +762,271 @@ test('rejects HUD values that are outside a declared bar range or have unsupport
   const errors = validateStoryboard(data);
   assert.ok(errors.some(message => /scenes\[0\]\.hud\[0\].*value.*min.*max/.test(message)));
   assert.ok(errors.some(message => /scenes\[0\]\.hud\[1\]\.value/.test(message)));
+});
+
+// ── 事件 HUD：结构化读数 ──────────────────────────────────────────────
+// 旧写法（字符串、自由对象）继续通过；结构化对象 {label,unit?,value,delta?,broken?}
+// 逐字段校验，负向状态用数值判定（delta < 0 或 broken: true），不再靠中文词猜测。
+
+function structuredHudStoryboard() {
+  const data = validStoryboard();
+  data.scenes[0].events = [
+    { at: 1, action: 'raise-gift', hud: { label: '好感度', unit: '%', value: 70, delta: -30 } },
+    { at: 2, action: 'save-fail', hud: { label: '存档', value: '已损坏', broken: true } },
+  ];
+  return data;
+}
+
+test('accepts structured event HUD objects with label, unit, value, delta and broken', () => {
+  assert.deepEqual(validateStoryboard(structuredHudStoryboard()), []);
+  const states = analyzeStoryboard(structuredHudStoryboard()).hudStates;
+  assert.ok(Array.isArray(states), 'analyzer must expose the numeric HUD reading it used');
+  const readings = states.filter(state => state.path.startsWith('scenes[0]'));
+  assert.deepEqual(readings.map(state => state.path), ['scenes[0].events[0].hud', 'scenes[0].events[1].hud']);
+  assert.deepEqual(readings.map(state => [state.label, state.unit, state.value, state.delta, state.broken]), [
+    ['好感度', '%', 70, -30, undefined],
+    ['存档', undefined, '已损坏', undefined, true],
+  ]);
+});
+
+test('decides negative HUD states from numbers instead of Chinese wording', () => {
+  const data = validStoryboard();
+  data.scenes[0].events = [
+    { at: 1, action: 'drop', hud: { label: '好感度', value: 40, delta: -30 } },
+    { at: 2, action: 'rise', hud: { label: '神选度', unit: '%', value: 12, delta: 4 } },
+    { at: 3, action: 'break', hud: { label: '存档', value: '已损坏', broken: true } },
+    { at: 4, action: 'legacy-text', hud: '好感度 -30' },
+    { at: 5, action: 'legacy-object', hud: { count: 0 } },
+  ];
+  const { errors, hudStates } = analyzeStoryboard(data);
+  assert.deepEqual(errors, []);
+  const states = hudStates.filter(state => state.path.startsWith('scenes[0]'));
+  assert.deepEqual(states.map(state => state.mode), ['structured', 'structured', 'structured', 'string', 'freeform']);
+  // 只有结构化读数能给出负向结论；文案里的“-30”不构成判据。
+  assert.deepEqual(states.map(state => state.negative), [true, false, true, null, null]);
+});
+
+test('rejects malformed structured event HUD fields with located diagnostics', () => {
+  const cases = [
+    ['a structured HUD without a label', { value: 1, delta: -2 }, /events\[0\]\.hud\.label/],
+    ['a blank structured HUD label', { label: ' ', value: 1, delta: -2 }, /events\[0\]\.hud\.label/],
+    ['a structured HUD without a value', { label: '好感度', delta: -2 }, /events\[0\]\.hud\.value/],
+    ['a blank structured HUD value', { label: '好感度', value: '  ' }, /events\[0\]\.hud\.value/],
+    ['a nonnumeric HUD delta', { label: '好感度', value: 1, delta: 'minus' }, /events\[0\]\.hud\.delta/],
+    ['a nonfinite HUD delta', { label: '好感度', value: 1, delta: Infinity }, /events\[0\]\.hud\.delta/],
+    ['a nonboolean HUD broken flag', { label: '存档', value: '损坏', broken: 'yes' }, /events\[0\]\.hud\.broken/],
+    ['a blank HUD unit', { label: '神选度', value: 12, unit: ' ' }, /events\[0\]\.hud\.unit/],
+    ['a HUD object that only declares a delta', { delta: -1 }, /events\[0\]\.hud/],
+  ];
+  for (const [name, hud, expected] of cases) {
+    const data = validStoryboard();
+    data.scenes[0].events = [{ at: 2, action: 'raise-gift', hud }];
+    const errors = validateStoryboard(data);
+    assert.ok(errors.some(message => expected.test(message)), `${name}: ${JSON.stringify(errors)}`);
+  }
+});
+
+test('keeps legacy string and free-form HUD events valid while warning once about numeric migration', () => {
+  const data = validStoryboard();
+  data.scenes[0].events = [{ at: 2, action: 'raise-gift', hud: '好感度 -30' }];
+  data.scenes[1].events = [{ at: 8, action: 'open-save', hud: '存档 损坏' }];
+  const result = analyzeStoryboard(data);
+  assert.deepEqual(result.errors, []);
+  const migration = warningsAt(result, 'events[*].hud');
+  assert.equal(migration.length, 1, JSON.stringify(result.warnings));
+  assert.match(migration[0], /结构化|迁移/);
+  assert.match(migration[0], /label/);
+  // 一个对象读数出现后，迁移提示消失。
+  data.scenes[0].events.push({ at: 3, action: 'read', hud: { label: '好感度', value: 40, delta: -30 } });
+  assert.equal(warningsAt(analyzeStoryboard(data), 'events[*].hud').length, 0);
+});
+
+test('negative structured HUD states are reported with their numeric evidence', () => {
+  const data = validStoryboard();
+  data.scenes[0].lyricIds = [];
+  data.scenes[0].events = [{ at: 2, action: 'drop', hud: { label: '好感度', value: 40, delta: -30 } }];
+  const negative = warningsAt(analyzeStoryboard(data), 'scenes[0].events[0].hud');
+  assert.equal(negative.length, 1);
+  assert.match(negative[0], /delta=-?30|下降/);
+  // 文案里带减号但不带数值依据时，不给数值结论。
+  data.scenes[0].events = [{ at: 2, action: 'drop', hud: '好感度 下降' }];
+  const textual = warningsAt(analyzeStoryboard(data), 'scenes[0].events[0].hud');
+  assert.equal(textual.length, 1);
+  assert.doesNotMatch(textual[0], /delta=/);
+});
+
+// ── 字幕单行长度（按显示宽度，不是字符数）────────────────────────────
+test('warns when one subtitle line exceeds 22 full-width characters', () => {
+  const data = validStoryboard();
+  data.lyrics[0].text = '一二三四五六七八九十一二三四五六七八九十一二';
+  let result = analyzeStoryboard(data);
+  assert.deepEqual(result.errors, []);
+  assert.equal(warningsAt(result, 'lyrics[0].text').length, 0, '22 个全角字宽是上限而不是错误');
+  data.lyrics[0].text = '一二三四五六七八九十一二三四五六七八九十一二三';
+  result = analyzeStoryboard(data);
+  assert.deepEqual(result.errors, []);
+  assert.match(warningsAt(result, 'lyrics[0].text')[0], /23 个全角字宽.*拆成两行/);
+  // 空白不计数。
+  data.lyrics[0].text = ' 一二三四五六七八九十一二 三四五六七八九十一二三 ';
+  assert.match(warningsAt(analyzeStoryboard(data), 'lyrics[0].text')[0], /23 个全角字宽/);
+  // 空白撑到 22 字以上但实际字符不足时不提示。
+  data.lyrics[0].text = '一二三四五六七八九十一二     三四五六七八九十一二';
+  assert.equal(warningsAt(analyzeStoryboard(data), 'lyrics[0].text').length, 0);
+});
+
+test('counts ASCII as half width so English subtitles are not falsely flagged', () => {
+  const data = validStoryboard();
+  // 一行 40 个半角字符 = 20 个全角宽，排得下；按字符数会被误判成 40 字超限。
+  data.lyrics[0].text = 'You said to me I am not what you see';
+  let result = analyzeStoryboard(data);
+  assert.deepEqual(result.errors, []);
+  assert.equal(warningsAt(result, 'lyrics[0].text').length, 0, '40 个半角字符只占 20 个全角宽');
+  // 中英混排按各自宽度累加：10 汉字 + 18 半角 = 19 宽，仍在上限内。
+  data.lyrics[0].text = '一二三四五六七八九十 you never know';
+  assert.equal(warningsAt(analyzeStoryboard(data), 'lyrics[0].text').length, 0);
+  // 再补 8 个汉字 → 18 汉字 + 12 半角 = 24 宽，超限。
+  data.lyrics[0].text = '一二三四五六七八九十一二三四五六七八 you never know';
+  assert.match(warningsAt(analyzeStoryboard(data), 'lyrics[0].text')[0], /24 个全角字宽/);
+  // 真正的超长英文仍要告警：80 个半角 = 40 宽。
+  data.lyrics[0].text = 'You said to me I am not what you see and I am moving on somebody else can give you more';
+  assert.equal(warningsAt(analyzeStoryboard(data), 'lyrics[0].text').length, 1);
+});
+
+// ── lyricsMeta 歌词溯源 ───────────────────────────────────────────────
+function lyricsMetaStoryboard() {
+  const data = validStoryboard();
+  data.lyricsMeta = {
+    source: 'netease-lrc', ref: '3410245671',
+    fetchedAt: '2026-11-17T14:45:00+08:00', proofread: true,
+  };
+  return data;
+}
+
+test('accepts optional lyric provenance metadata and warns when it was not proofread', () => {
+  assert.deepEqual(validateStoryboard(lyricsMetaStoryboard()), []);
+  assert.equal(warningsAt(analyzeStoryboard(lyricsMetaStoryboard()), 'lyricsMeta').length, 0);
+  const data = lyricsMetaStoryboard();
+  data.lyricsMeta.proofread = false;
+  const result = analyzeStoryboard(data);
+  assert.deepEqual(result.errors, []);
+  const warning = warningsAt(result, 'lyricsMeta.proofread');
+  assert.equal(warning.length, 1);
+  assert.match(warning[0], /试听/);
+});
+
+const invalidLyricsMetaCases = [
+  ['a lyricsMeta written as text', 'netease-lrc', /^lyricsMeta: 必须为对象/],
+  ['a lyricsMeta written as an array', [{ source: 'netease-lrc' }], /^lyricsMeta: 必须为对象/],
+  ['a null lyricsMeta', null, /^lyricsMeta: 必须为对象/],
+  ['a missing lyric source', { fetchedAt: '2026-11-17T14:45:00+08:00', proofread: false }, /^lyricsMeta\.source:/],
+  ['a blank lyric source', { source: ' ', fetchedAt: '2026-11-17T14:45:00+08:00', proofread: false }, /^lyricsMeta\.source:/],
+  ['a missing fetch time', { source: 'netease-lrc', proofread: false }, /^lyricsMeta\.fetchedAt:/],
+  ['a blank fetch time', { source: 'netease-lrc', fetchedAt: ' ', proofread: false }, /^lyricsMeta\.fetchedAt:/],
+  ['a nonboolean proofread flag', { source: 'netease-lrc', fetchedAt: '2026-11-17T14:45:00+08:00', proofread: 'no' }, /^lyricsMeta\.proofread:/],
+  ['a nontext lyric reference', { source: 'netease-lrc', fetchedAt: '2026-11-17T14:45:00+08:00', proofread: true, ref: 42 }, /^lyricsMeta\.ref:/],
+];
+
+for (const [name, lyricsMeta, expected] of invalidLyricsMetaCases) {
+  test(`rejects ${name} with a located diagnostic instead of crashing`, () => {
+    const data = validStoryboard();
+    data.lyricsMeta = lyricsMeta;
+    const result = analyzeStoryboard(data);
+    assert.ok(result.errors.some(message => expected.test(message)), JSON.stringify(result.errors));
+  });
+}
+
+// ── 装置集合与章节引用 ────────────────────────────────────────────────
+function devicesStoryboard() {
+  const data = validStoryboard();
+  data.devices = [
+    { id: 'river-system', type: 'game-system', name: '隔岸寄送系统', purpose: '把寄送呈现为可读状态' },
+    { id: 'save-load', type: 'game-system', name: '读档界面', purpose: '第二个阶段换成读档提示' },
+  ];
+  data.chapters = [
+    { id: 'send-chapter', start: 0, end: 6, title: '第一次发送', meaning: '主动靠近', deviceId: 'river-system' },
+    { id: 'load-chapter', start: 6, end: 12, title: '读档回看', meaning: '回看未抵达', deviceId: 'save-load' },
+  ];
+  return data;
+}
+
+test('accepts devices[] with stable ids and chapter device references', () => {
+  const data = devicesStoryboard();
+  assert.deepEqual(validateStoryboard(data), []);
+  assert.equal(analyzeStoryboard(data).warnings.filter(message => /deviceId/.test(message)).length, 0);
+});
+
+test('keeps one legacy device usable as the effective device set', () => {
+  const data = validStoryboard();
+  data.device = { id: 'save-console', type: 'game-system', name: '存档系统', purpose: '把关系状态呈现为可操作界面' };
+  data.chapters = [
+    { id: 'chapter-1', start: 0, end: 6, title: '第一次发送', meaning: '主动靠近', deviceId: 'save-console' },
+    { id: 'chapter-2', start: 6, end: 12, title: '收到回光', meaning: '关系留下回应', deviceId: 'save-console' },
+  ];
+  const result = analyzeStoryboard(data);
+  assert.deepEqual(result.errors, []);
+  const hint = warningsAt(result, 'chapters[1].deviceId');
+  assert.equal(hint.length, 1, JSON.stringify(result.warnings));
+  assert.match(hint[0], /章节牌/);
+});
+
+test('rejects a chapter deviceId outside the effective device set', () => {
+  const unknown = devicesStoryboard();
+  unknown.chapters[1].deviceId = 'unknown-device';
+  const errors = validateStoryboard(unknown);
+  assert.ok(errors.some(message => /^chapters\[1\]\.deviceId:.*unknown-device/.test(message)), JSON.stringify(errors));
+  const declared = validStoryboard();
+  declared.chapters = [{ id: 'only', start: 0, end: 12, title: '全片', meaning: '单章', deviceId: 'river-system' }];
+  assert.ok(validateStoryboard(declared).some(message => /^chapters\[0\]\.deviceId:/.test(message)));
+});
+
+test('rejects malformed device collections while keeping the single-device diagnostics', () => {
+  const cases = [
+    ['devices written as one object', { id: 'x', type: 'game-system', name: '装置', purpose: '用途' }, /^devices: 必须为数组/],
+    ['an empty devices list', [], /^devices:/],
+    ['a device entry without an id', [{ type: 'game-system', name: '装置', purpose: '用途' }], /^devices\[0\]\.id:/],
+    ['duplicate device ids', [{ id: 'same', type: 'game-system', name: '甲', purpose: '用途' }, { id: 'same', type: 'game-system', name: '乙', purpose: '用途' }], /^devices\[1\]\.id:/],
+    ['an unsupported device type in devices[]', [{ id: 'x', type: 'plugin', name: '装置', purpose: '用途' }], /^devices\[0\]\.type:/],
+    ['a sparse device entry', [null], /^devices\[0\]: 必须为对象/],
+  ];
+  for (const [name, devices, expected] of cases) {
+    const data = validStoryboard();
+    data.devices = devices;
+    const errors = validateStoryboard(data);
+    assert.ok(errors.some(message => expected.test(message)), `${name}: ${JSON.stringify(errors)}`);
+  }
+});
+
+// ── 示例分镜：严格单镜 24 秒 + 三次可读变化 ─────────────────────────
+// 示例是新手最先复制的东西，所以它自己必须示范「长镜头靠变化密度成立」：
+// 一镜 0–24 秒，靠 1 次 HUD 下降 + 2 次字幕换行撑住可读性。
+// 需要多镜的测试自己从第一镜派生 fixture，不反过来要求示例保住第二个镜。
+test('the shipped example carries a 24-second main shot whose readability comes from three changes', () => {
+  const example = JSON.parse(readFileSync(
+    new URL('../skills/lyric-driven-code-mv/assets/storyboard-example.json', import.meta.url), 'utf8',
+  ));
+  for (const key of ['project', 'music', 'lyrics', 'scenes', 'chapters', 'actors', 'props', 'device']) {
+    assert.ok(example[key] !== undefined, `示例必须保留必填字段 ${key}`);
+  }
+  assert.equal(example.scenes.length, 1, '示例必须是严格单镜；多镜示范会自相矛盾');
+  const [main] = example.scenes;
+  assert.deepEqual([main.id, main.start, main.end], ['send', 0, 24], '主镜必须是 24 秒一镜，而不是几个短镜');
+  const hudEvents = main.events.filter(event => event.hud !== undefined);
+  assert.equal(hudEvents.length, 1, '主镜里 HUD 只变一次');
+  assert.equal(typeof hudEvents[0].hud, 'object');
+  assert.equal(typeof hudEvents[0].hud.delta, 'number');
+  const onScreen = example.lyrics.filter(line => line.start < main.end);
+  assert.equal(onScreen.length, 3, '字幕换两行需要三行；第一行建立基线');
+  assert.deepEqual(onScreen.map(line => line.start), [0.8, 9, 17.2]);
+  // 三次可读变化：HUD 下降一次 + 字幕换行两次。
+  const changes = [...hudEvents.map(event => event.at), ...onScreen.slice(1).map(line => line.start)].sort((a, b) => a - b);
+  assert.deepEqual(changes, [4.5, 9, 17.2]);
+  assert.equal(example.lyricsMeta?.proofread, true);
+  // 收尾必须落在 24 秒上：duration、章节、段落、拍点都不能越过主镜。
+  assert.equal(example.project.duration, 24);
+  assert.equal(example.chapters.at(-1).end, 24);
+  assert.equal(example.music.sections.at(-1).end, 24);
+  assert.ok(example.music.beats.every(beat => beat < 24), '拍点不能越过成片时长');
+  const analysis = analyzeStoryboard(example);
+  assert.deepEqual(analysis.errors, []);
+  assert.deepEqual(analysis.warnings, [], '示例必须能通过 --strict，不能自带警告');
 });

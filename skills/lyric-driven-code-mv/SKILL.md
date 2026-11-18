@@ -9,6 +9,16 @@ description: Use when a music video needs code animation that responds to lyric 
 
 ## 工作流程
 
+**先做依赖预检。** Pillow 只被 `scripts/` 下 5 个 Python 脚本使用，声明在仓库根 `requirements.txt`：
+
+```sh
+python -c "import PIL" 2>/dev/null || python -m pip install pillow
+```
+
+Windows PowerShell 用 `python -c "import PIL"; if ($LASTEXITCODE -ne 0) { python -m pip install pillow }`。
+
+Node 侧零第三方包：`scripts/`、`assets/scenes/`、`assets/templates/starter/` 下的 `.mjs` 只 import `node:` 内置模块，skill 目录内没有 `package.json`，**不需要 `npm install`，离线可用**——`validate-storyboard.mjs`、`hud-density.mjs` 同样如此。FFmpeg/FFprobe 是系统二进制，按第 4 步核对。
+
 1. **固定输入与证据。** 确认歌曲文件及版本、校对歌词、截取范围、画幅、人物设定和交付范围。自己找歌时先读 [音频与授权](references/audio-and-rights.md)，核对作品及录音的使用条件。分析参考片时分别记录可见事实、音频核对结果和实现推断；只有完成全时段检查才称“看完整片”。作者工具无源码或声明证据时标为未知。
 2. **建立两条时间线。** 标注句起止、段落、重要重音和留白；语义表记录人物关系、意象和动作。读 [时间与分镜](references/storyboard-and-timing.md)，统一成片坐标与原曲偏移。器乐配原创叙事字幕时说明文案角色，不当作演唱转录。已有 FFmpeg 时先用 `scripts/analyze-audio.mjs` 生成离线能量、停顿、起音和 BPM/相位候选；需要同轴检查镜头和字幕时读 [同步候选图](references/sync-review.md)。不把候选当歌词对齐，无法试听也可完成透明标注的草稿。
 3. **先选装置，再选场景。** 先确定聊天、游戏系统、时间轴、计数器、章节牌、视角或材质舞台，再为每镜写目标→行动→反馈→结果。用 `chapters[]` 记录标题牌、关系阶段和结算；用 `scene.hud[]` 表达数值、状态、归零、损坏或失败的情绪反馈；同构图换季节、材质或年代时写 `materialVariant`。镜长由信息密度决定，不设固定上限；建议每 8–12 秒至少有一次可读变化，长镜头也可用于等待和留白。参考 [装置与章节](references/story-devices.md) 和 [HUD 与字幕](references/hud-and-subtitles.md)；要现成骨架时从 [装置模板](references/device-templates.md) 的五个 JSON（私信、读档、清单、结算、双轴滑块）里挑一个改写，别从空白开始。反复意象安排首次出现、变化和再出现；重复副歌增加信息或后果。保留人物身份、装束和道具来龙去脉。像素美术、摄像机、字幕和双人叙事读 [像素世界与演出](references/pixel-game-visuals.md)。
@@ -69,6 +79,10 @@ node assets/templates/starter/export.mjs --storyboard path/to/storyboard.json --
 
 ```sh
 node scripts/hud-density.mjs path/to/storyboard.json --max-gap 12        # 可读变化密度与空白窗
+python scripts/layout-check.py path/to/storyboard.json \
+  --hud "档案:56,44,596,200" --hud "神选度:1256,44,1794,200" \
+  --log "56,700,640,880" --subtitle-band "360,930,1560,1020" \
+  --safe "right=124,bottom=92" --scenes "s09-ledger:full-ui"
 python scripts/timeline-sync.py song.wav --storyboard storyboard.json -o work/timeline.png
 python scripts/safe-area.py --video work/mv.mp4 --at 3 10 -o work/check.png
 python scripts/film-sheet.py shots/<片名> -o sheet.jpg --cols 3
@@ -81,7 +95,7 @@ node assets/templates/starter/export.mjs --storyboard path/to/storyboard.json --
 
 `scripts/lrc.mjs` 把 LRC 时点按 `--offset` 秒加到片段时钟，逐行推算 `end`；提供 `--storyboard` 时会为跨镜歌词补 `allowSceneSplit` 与原因。`scripts/new-storyboard.mjs` 生成 12 镜待填写骨架，歌词可从 JSON 直接导入。12 个画法资产位于 [assets/scenes](assets/scenes/README.md)，每个工厂都可配置主体取景位置、调色板和镜头时长。`--sfx-script PATH` 可让复制出去的 starter 使用自定义音效模块，不需要改源码；`project.draftMark:false` 可隐藏 draft 提示，状态仍会写进导出资产清单。
 
-`hud-density.mjs` 把切镜、材质、HUD、事件、音效、字幕六类变化摊到时间轴上，报最长空白窗与单镜内部空窗；`--strict` 时有空窗即非零退出。`timeline-sync.py` 从音轨取能量包络并估拍点，与切镜、字幕画进同一张图，标 `speculative` 的 BPM 只能用来发现整段踩错，不能据此宣称同步。`safe-area.py` 叠平台安全区（顶部、底部 8.5%、右侧 6.5%、4:3、9:16），字幕底边与 HUD 都要躲开。`minimal-renderer.py` 是不用 starter 工程也能出画面的最小实现，演示标题牌、数值 HUD 与双语字幕。`sfx.mjs` 合成八种音效（tick/type/click/whoosh/confirm/error/riser/chime），长度严格等于 `project.duration`，供混音使用；两层对齐关系见 [音效层与卡点](references/sfx-and-beat.md)——**画面踩拍点，音效跟画面同帧，音效不踩拍**。
+`hud-density.mjs` 把切镜、材质、HUD、事件、音效、字幕六类变化摊到时间轴上，报最长空白窗与单镜内部空窗；`--strict` 时有空窗即非零退出。`timeline-sync.py` 从音轨取能量包络并估拍点，与切镜、字幕画进同一张图，标 `speculative` 的 BPM 只能用来发现整段踩错，不能据此宣称同步。`safe-area.py` 叠平台安全区（顶部、底部 8.5%、右侧 6.5%、4:3、9:16），字幕底边与 HUD 都要躲开，1080p 的底边下限是 92 px。`layout-check.py` 按成片像素查 HUD 之间、HUD 与字幕带之间的重叠，以及越出安全区的矩形；矩形写作 `名称:x,y,x1,y1`（左上角 + 右下角，都是绝对像素，不是宽高），`--subtitle-band` 传含底条与描边的最外层矩形；`--scenes "s09-ledger:full-ui"` 这样的整屏场景可豁免该场 HUD 检查，字幕带仍受安全区约束。`minimal-renderer.py` 是**占位与版式校验用**的最小渲染器（标题牌 + 数值 HUD + 双语字幕），**不含场景绘制，不作为成片渲染器**；要画面完成度就走 starter 或用户自己的工程。`sfx.mjs` 合成八种音效（tick/type/click/whoosh/confirm/error/riser/chime），长度严格等于 `project.duration`，供混音使用；两层对齐关系见 [音效层与卡点](references/sfx-and-beat.md)——**画面踩拍点，音效跟画面同帧，音效不踩拍**。
 
 校验器保留 `validateStoryboard(data) → errors[]`，提供 `analyzeStoryboard(data,{beatToleranceMs,delivery}) → {errors,warnings}`。普通提示不改变退出码；`--strict` 只是将结构检查中的警告视为失败，通过不证明可发布或 `verified`。`--delivery` 检查许可记录、音乐证据及草稿待核对清单，字段规则见时间与分镜参考。跨镜歌词、显式踩拍事件、HUD 支撑、装置/章节覆盖及授权缺项都有可定位的提示；工具不证明语义正确、许可有效或实际音画同步。
 

@@ -9,11 +9,25 @@ import { fileURLToPath } from 'node:url';
 
 const base = new URL('../skills/lyric-driven-code-mv/assets/templates/starter/', import.meta.url);
 const source = JSON.parse(await readFile(new URL('../skills/lyric-driven-code-mv/assets/storyboard-example.json', import.meta.url), 'utf8'));
+// 示例分镜按文档要求只有一镜 24 秒；这个 fixture 需要两镜来测切镜与转场，
+// 所以自己从第一镜派生第二镜，而不是依赖随发布一起改动的示例结构。
+const secondShot = (first, id, start, end) => ({
+  ...structuredClone(first),
+  id,
+  start,
+  end,
+  exit: { type: 'cut', dur: 0 },
+  events: (first.events || []).map(event => ({ ...event, at: start + (event.at - first.start) / 2 })),
+  hud: [],
+});
 const fixture = () => {
   const data = structuredClone(source);
   Object.assign(data.project, { duration: 4, fps: 4, width: 768, height: 432 });
   data.scenes[0].end = 1.5; data.scenes[0].exit = { type: 'dissolve', dur: 0.5 };
-  data.scenes[1].start = 1.5; data.scenes[1].end = 4;
+  data.scenes.push(secondShot(data.scenes[0], 'receive', 1.5, 4));
+  data.chapters = [{ id: 'c1', start: 0, end: 1.5, title: '发出' }, { id: 'c2', start: 1.5, end: 4, title: '回应' }];
+  data.music.beats = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
+  data.music.sections = [{ id: 'a', start: 0, end: 1.5 }, { id: 'b', start: 1.5, end: 4 }];
   data.lyrics = [{ id: 'new-line', start: 0.2, end: 1.2, text: '新的分镜字幕', en: 'A new cue.' }];
   return data;
 };

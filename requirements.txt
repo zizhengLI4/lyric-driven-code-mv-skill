@@ -1,0 +1,4 @@
+# scripts/ 下 5 个 Python 脚本依赖 Pillow：film-sheet.py（在函数内 import，顶层 grep 会漏）、
+# minimal-renderer.py、pixel-font.py、safe-area.py、timeline-sync.py。
+# Node 侧（scripts/*.mjs、assets/scenes、assets/templates/starter）只用 node: 内置模块，不需要 npm install。
+Pillow>=10.0

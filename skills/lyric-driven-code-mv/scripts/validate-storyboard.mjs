@@ -6,6 +6,29 @@ const EPSILON = 1e-6;
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const isText = value => typeof value === 'string' && value.trim().length > 0;
 const isFiniteNumber = value => typeof value === 'number' && Number.isFinite(value);
+
+// 字幕单行上限用「显示宽度」而不是字符数：22 是 22 个全角字的宽度。
+// 全角（CJK、假名、全角标点）算 1，半角（ASCII、数字、半角标点）算 0.5。
+// 直接数字符数会让纯英文字幕一律误报——37 个英文字符只占 18.5 个全角宽。
+const isWideCodePoint = code => {
+  // 东亚宽字符的主要区段：CJK 统一表意文字、假名、谚文、全角形式、CJK 标点。
+  return (code >= 0x1100 && code <= 0x115f)      // 谚文字母
+    || (code >= 0x2e80 && code <= 0xa4cf)        // CJK 部首、表意文字、假名、CJK 标点
+    || (code >= 0xac00 && code <= 0xd7a3)        // 谚文音节
+    || (code >= 0xf900 && code <= 0xfaff)        // CJK 兼容表意文字
+    || (code >= 0xfe30 && code <= 0xfe6f)        // CJK 兼容形式、小写变体
+    || (code >= 0xff00 && code <= 0xff60)        // 全角 ASCII
+    || (code >= 0xffe0 && code <= 0xffe6)        // 全角符号
+    || (code >= 0x20000 && code <= 0x3fffd);     // CJK 扩展 B 及以后
+};
+const displayWidth = value => {
+  let width = 0;
+  for (const character of value.replace(/\s+/gu, '')) {
+    width += isWideCodePoint(character.codePointAt(0)) ? 1 : 0.5;
+  }
+  return width;
+};
+const formatWidth = width => (Number.isInteger(width) ? `${width}` : width.toFixed(1));
 const unresolved = value => !isText(value) || /^(?:(?:unknown|pending|tbd|unverified)\b|未知|待确认|待核对|待授权)/iu.test(value.trim());
 const genericPendingCheck = /^(?:unknown|pending|tbd|unverified|未知|待确认|待核对|待检查|待核听|未确认|未核对|未检查|未核听|没核对|没有核对)[.!?。！？]*$/iu;
 
@@ -31,6 +54,9 @@ export function validateStoryboard(data) {
 export function analyzeStoryboard(data, options = {}) {
   const errors = [];
   const warnings = [];
+  // 事件 HUD 的结构化读数与负向判定结果，供校验、报告和渲染器共用，避免再从中文字符串里抓数字。
+  const hudStates = [];
+  const stringHudPaths = [];
   const fail = (path, message) => errors.push(`${path}: ${message}`);
   const warn = (path, message) => warnings.push(`${path}: ${message}`);
   const settings = isObject(options) ? options : {};
@@ -101,7 +127,7 @@ export function analyzeStoryboard(data, options = {}) {
     });
   };
 
-  if (!object(data, 'storyboard')) return { errors, warnings };
+  if (!object(data, 'storyboard')) return { errors, warnings, hudStates };
   if (data.schemaVersion !== 1) fail('schemaVersion', '必须为 1');
   if (data.timebase !== 'clip') fail('timebase', '必须为 clip；所有时间点使用成片秒');
 
@@ -149,16 +175,25 @@ export function analyzeStoryboard(data, options = {}) {
 
   // Optional narrative structure. These fields are descriptive and remain
   // compatible with older storyboards; renderers may choose how to present them.
-  if (data.device !== undefined) {
-    const device = object(data.device, 'device');
-    if (device) {
-      text(device.id, 'device.id');
-      text(device.name, 'device.name');
-      text(device.purpose, 'device.purpose');
-      const deviceTypes = ['chat', 'game-system', 'timeline', 'counter', 'chapter-card', 'viewfinder', 'material-stage', 'custom'];
-      if (!deviceTypes.includes(device.type)) fail('device.type', `必须为 ${deviceTypes.join('、')} 之一`);
-    }
+  // 装置集合：devices[] 存在时以它为准（一条片子允许换装置），否则退回单数 device。
+  const DEVICE_TYPES = ['chat', 'game-system', 'timeline', 'counter', 'chapter-card', 'viewfinder', 'material-stage', 'custom'];
+  const checkDevice = (value, path, seen) => {
+    const device = object(value, path);
+    if (!device) return;
+    id(device.id, `${path}.id`, seen);
+    text(device.name, `${path}.name`);
+    text(device.purpose, `${path}.purpose`);
+    if (!DEVICE_TYPES.includes(device.type)) fail(`${path}.type`, `必须为 ${DEVICE_TYPES.join('、')} 之一`);
+  };
+  const deviceIds = new Set();
+  if (data.devices !== undefined) {
+    const devices = array(data.devices, 'devices');
+    if (devices.length === 0) fail('devices', '提供 devices 时至少需要一个装置，否则 chapters[].deviceId 没有可引用的目标');
+    devices.forEach((value, i) => checkDevice(value, `devices[${i}]`, deviceIds));
+  } else if (data.device !== undefined) {
+    checkDevice(data.device, 'device', deviceIds);
   }
+  const deviceCandidateText = deviceIds.size ? `；有效装置 id：${[...deviceIds].join('、')}` : '；当前没有声明 device 或 devices';
 
   // sourceOffset is metadata: interval checks always use the unshifted clip clock.
   const duration = project.duration;
@@ -179,6 +214,7 @@ export function analyzeStoryboard(data, options = {}) {
   if (data.chapters !== undefined) {
     const chapterIds = new Set();
     let previousChapter = null;
+    let previousDeviceId = null;
     const chapterEntries = array(data.chapters, 'chapters');
     if (chapterEntries.length === 0) fail('chapters', '提供章节时至少需要一个章节覆盖完整成片');
     Array.from(chapterEntries).forEach((value, i) => {
@@ -189,6 +225,15 @@ export function analyzeStoryboard(data, options = {}) {
       interval(chapter, path);
       text(chapter.title, `${path}.title`);
       text(chapter.meaning, `${path}.meaning`);
+      // 指向有效装置集合；集合由 devices[] 或单数 device 决定。
+      if (chapter.deviceId !== undefined && text(chapter.deviceId, `${path}.deviceId`)) {
+        if (!deviceIds.has(chapter.deviceId)) {
+          fail(`${path}.deviceId`, `不存在装置 ${chapter.deviceId}${deviceCandidateText}`);
+        } else if (chapter.deviceId === previousDeviceId) {
+          warn(`${path}.deviceId`, `相邻两章都使用装置 ${chapter.deviceId}；章节切换处是否需要章节牌让观众看出这是一章的开始`);
+        }
+      }
+      previousDeviceId = isText(chapter.deviceId) ? chapter.deviceId : null;
       if (Number.isFinite(chapter.start)) {
         if (i === 0 && Math.abs(chapter.start) > EPSILON) fail(path, '第一个章节必须从 0 开始');
         if (previousChapter && Math.abs(chapter.start - previousChapter.end) > EPSILON) {
@@ -212,11 +257,36 @@ export function analyzeStoryboard(data, options = {}) {
     if (!lyric) return;
     id(lyric.id, `${path}.id`, lyricIds);
     interval(lyric, path);
-    text(lyric.text, `${path}.text`);
+    if (text(lyric.text, `${path}.text`)) {
+      // 单行上限按「显示宽度」算，不是按字符数：22 个全角字的宽度是 1080p 下能排满
+      // 字幕带而不用缩字号的极限。半角字符（ASCII、数字）只占一半宽度，
+      // 所以一行 37 个英文字符（≈18.5 个全角宽）排得下，不该告警。
+      // 早期实现直接数 `[...text].length`，于是纯英文字幕一律误报。
+      const width = displayWidth(lyric.text);
+      if (width > 22) {
+        warn(`${path}.text`,
+          `${formatWidth(width)} 个全角字宽（去空白后），建议按标点拆成两行（单行上限 22 个全角字宽）`);
+      }
+    }
     if (lyric.allowSceneSplit !== undefined && typeof lyric.allowSceneSplit !== 'boolean') fail(`${path}.allowSceneSplit`, '若提供，必须为布尔值');
     if (lyric.splitReason !== undefined && typeof lyric.splitReason !== 'string') fail(`${path}.splitReason`, '若提供，必须为字符串');
     if (typeof lyric.id === 'string') lyricsById.set(lyric.id, lyric);
   });
+
+  // 歌词来源不可从歌词本身看出（官方 LRC、用户投稿、空耳转写的可靠度差别很大），
+  // 因此单独记录；缺省不报错，缺字段或类型错时给出带路径的诊断。
+  if (data.lyricsMeta !== undefined) {
+    const meta = object(data.lyricsMeta, 'lyricsMeta');
+    if (meta) {
+      text(meta.source, 'lyricsMeta.source');
+      text(meta.fetchedAt, 'lyricsMeta.fetchedAt');
+      if (meta.ref !== undefined && !isText(meta.ref)) fail('lyricsMeta.ref', '若提供，必须为非空字符串');
+      if (typeof meta.proofread !== 'boolean') fail('lyricsMeta.proofread', '必须为布尔值；没有逐句试听就写 false');
+      else if (meta.proofread === false) {
+        warn('lyricsMeta.proofread', 'proofread:false；交付说明里要写清「字幕落点未逐句试听」，不要写成已核对同步');
+      }
+    }
+  }
 
   const music = object(data.music, 'music') ?? {};
   if (!['illustrative', 'draft', 'verified'].includes(music.status)) {
@@ -431,16 +501,59 @@ export function analyzeStoryboard(data, options = {}) {
       }
       const hasHud = event.hud !== undefined;
       let validHud = false;
+      let hudReading = null;
       if (hasHud) {
-        if (typeof event.hud === 'string') validHud = text(event.hud, `${eventPath}.hud`);
-        else if (isObject(event.hud)) validHud = true;
-        else fail(`${eventPath}.hud`, '必须为非空字符串或对象');
+        if (typeof event.hud === 'string') {
+          // 旧写法：文案里的数字无法核对，negative 保持未知（null），不做中文正则猜测。
+          validHud = text(event.hud, `${eventPath}.hud`);
+          if (validHud) {
+            hudReading = { mode: 'string', negative: null };
+            stringHudPaths.push(`${eventPath}.hud`);
+          }
+        } else if (isObject(event.hud)) {
+          const hud = event.hud;
+          // 出现 value/unit/delta/broken 中任意一项即按结构化读数校验；
+          // 只有 label 或自定义键的旧对象保持自由形态，不做字段要求。
+          const structured = hud.value !== undefined || hud.unit !== undefined
+            || hud.delta !== undefined || hud.broken !== undefined;
+          validHud = true;
+          if (structured) {
+            if (!text(hud.label, `${eventPath}.hud.label`)) validHud = false;
+            if (hud.value === undefined) {
+              fail(`${eventPath}.hud.value`, '结构化 HUD 需要 value（有限数或非空字符串）');
+              validHud = false;
+            } else if (!(isText(hud.value) || isFiniteNumber(hud.value))) {
+              fail(`${eventPath}.hud.value`, '必须为非空字符串或有限数');
+              validHud = false;
+            }
+            if (hud.unit !== undefined && !text(hud.unit, `${eventPath}.hud.unit`)) validHud = false;
+            if (hud.delta !== undefined && !finite(hud.delta, `${eventPath}.hud.delta`)) validHud = false;
+            if (hud.broken !== undefined && typeof hud.broken !== 'boolean') {
+              fail(`${eventPath}.hud.broken`, '若提供，必须为布尔值');
+              validHud = false;
+            }
+            hudReading = {
+              mode: 'structured',
+              label: hud.label, unit: hud.unit, value: hud.value, delta: hud.delta, broken: hud.broken,
+              // 负向判定只看数值：变化量为负或明确标记损坏。
+              negative: (isFiniteNumber(hud.delta) && hud.delta < 0) || hud.broken === true,
+            };
+          } else {
+            hudReading = { mode: 'freeform', negative: null };
+          }
+        } else {
+          fail(`${eventPath}.hud`, '必须为非空字符串或对象');
+        }
       }
+      if (hudReading) hudStates.push({ path: `${eventPath}.hud`, ...hudReading });
       for (const key of ['meaning', 'support']) {
         if (event[key] !== undefined && typeof event[key] !== 'string') fail(`${eventPath}.${key}`, '若提供，必须为字符串');
       }
       if (validHud && supportedEventLyrics.size === 0 && supportedSceneLyrics.size === 0 && !isText(event.meaning) && !isText(event.support)) {
-        warn(`${eventPath}.hud`, 'HUD 缺少有效歌词依据或 event.meaning/support 叙事说明；间奏 HUD 可记录其目的');
+        const reading = hudReading?.negative
+          ? `；当前读数是负向的（${hudReading.delta < 0 ? `delta=${hudReading.delta}` : 'broken:true'}），写明触发原因或留白结果`
+          : '';
+        warn(`${eventPath}.hud`, `HUD 缺少有效歌词依据或 event.meaning/support 叙事说明；间奏 HUD 可记录其目的${reading}`);
       }
       if (!finite(event.at, `${eventPath}.at`)) return;
       if (validDuration && (event.at < 0 || event.at >= duration)) fail(`${eventPath}.at`, '事件必须位于成片 [0,duration)');
@@ -472,7 +585,12 @@ export function analyzeStoryboard(data, options = {}) {
       warn(`lyrics[${i}]`, `一条歌词跨主镜头边界 ${crossed.join('、')} 秒；若有意拆分，记录 allowSceneSplit:true 与非空 splitReason`);
     }
   });
-  return { errors, warnings };
+  // 旧分镜继续通过，但整条片子没有一个结构化读数时提示迁移：
+  // 渲染器只能从中文文案里猜数字，改一句文案就会静默失效。
+  if (stringHudPaths.length > 0 && hudStates.every(state => state.mode === 'string')) {
+    warn('events[*].hud', `${stringHudPaths.length} 个事件 HUD 全是文案字符串，渲染器只能从中猜数值；建议迁移到结构化读数 { label, value, unit?, delta?, broken? }，例如 {"label":"好感度","value":40,"delta":-30}`);
+  }
+  return { errors, warnings, hudStates };
 }
 
 function main(args) {

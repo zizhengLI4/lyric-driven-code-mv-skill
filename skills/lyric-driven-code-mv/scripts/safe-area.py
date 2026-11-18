@@ -13,6 +13,7 @@
 依赖：Pillow；--video 需要 ffmpeg。
 """
 import argparse
+import math
 import os
 import subprocess
 import sys
@@ -42,9 +43,14 @@ def font(size):
 
 
 def zones(w, h):
+    # 边距口径必须与 layout-check.py 的 DEFAULT_SAFE 和文档「底边 ≥92px / 右侧 ≥124px」
+    # 完全一致，否则两个工具会互相判对方越界：
+    #   底部 0.085*1080 = 91.8 → 向上取整 92（宁严勿松，线画在 y=988）
+    #   右侧 0.065*1920 = 124.8 → 截断 124（线画在 x=1796）
+    # 别换成同一个取整函数：ceil 会把右侧推到 125、int 会把底部压到 91，两种都会打架。
     return {
         "title": (0, 0, w, int(h * 0.11)),
-        "subtitle": (0, h - int(h * 0.085), w, h),
+        "subtitle": (0, h - math.ceil(h * 0.085), w, h),
         "right": (w - int(w * 0.065), 0, w, h),
         "center43": (
             int(w * 0.075), int(h * 0.09),
@@ -103,7 +109,7 @@ def build_overlay(size, labels=True):
                 draw.text((x0 + 8 * scale, y0 + 8 * scale), text, font=f, fill=color + (255,))
 
         tag(z["title"], "顶部：标题/搜索，别放关键读数", TITLE)
-        tag(z["subtitle"], "底部 90px：字幕与 HUD 都别压线", SUB, anchor="bl")
+        tag(z["subtitle"], "底部 92px：字幕与 HUD 都别压线", SUB, anchor="bl")
         tag(z["right"], "右侧 120px", RIGHT, anchor="tr")
         tag(z["center43"], "4:3 安全框（老设备/裁切）", SAFE)
     return layer

@@ -40,7 +40,7 @@ fb.rect(-PAD_X, -PAD_Y, 384 + 2 * PAD_X, 216 + 2 * PAD_Y, skyColor);
 
 | 项目 | 1920×1080 的起点 |
 |---|---|
-| 安全区 | 底部约 25% 留作阅读区；左右至少 5%，距底边至少 5% |
+| 安全区 | 底部约 25% 作阅读区；距底边 ≥ 92 px、右侧 ≥ 124 px（1080p，以 `safe-area.py` 输出线为准，见 [HUD 与字幕](hud-and-subtitles.md)） |
 | 字号 | 英文约 44 px；中文单语约 40–52 px，双语次行可从 30–40 px 试读 |
 | 行距 | 约 1.2–1.35 倍字号；避免遮住人物关键动作 |
 | 底板 | 暗板不透明度从 0.4–0.65 试起，亮背景提高对比；横向渐隐可选 |
@@ -49,6 +49,25 @@ fb.rect(-PAD_X, -PAD_Y, 384 + 2 * PAD_X, 216 + 2 * PAD_Y, skyColor);
 这些是试读起点，竖屏、字数和字体需另调。逐字填充若用于跟唱，使用 `clamp((t-start)/(end-start),0,1)` 的线性进度，不能给跟唱时间加视觉缓动。没有逐词对齐时注明“视觉填充”；可以只显示整句，不能声称已精准卡拉 OK。模板目前显示整句字幕；按需添加 ASS `\kf` 或独立遮罩时，另记录真实逐词时点或演示均分方法。
 
 在最亮背景与转场中点抽取最终输出帧，按实际播放尺寸试读。白雪、灯光或白场可能吞掉白字；按需要增加暗板、深色描边或阴影，并确认这些层在转场中仍可见。叙事字幕与演唱字幕都要检查，不能只看暗场。
+
+### 系统字体路线（中文）
+
+`pixel-font.py` 只把 `DEFAULT_CHARSET` 里的 ASCII、数字和少量符号烘成点阵，中文没有点阵可用，只能退回系统字体。最小可跑参数：
+
+```python
+from PIL import Image, ImageDraw, ImageFont
+
+face = ImageFont.truetype("C:/Windows/Fonts/msyh.ttc", 40)   # 1080p 中文单行起点
+mask = face.getmask(text, "1")                                # "1" = 二值掩码，无灰度抗锯齿
+glyph = Image.frombytes("L", mask.size, bytes(mask))          # ImagingCore 需转 Image 才能贴
+draw.bitmap((x, y), glyph, fill=(236, 244, 255, 255))
+```
+
+- 字号：1080p 中文 40–52 px，英文 44 px 起；先 `face.getbbox(text)` 量宽高，再按 22 字上限与安全区排版，别居中完再回头看。
+- **关闭平滑**：Pillow 没有关抗锯齿的开关，正解是 `getmask(text, "1")` 取二值掩码（只有 0/255），不要靠在成品图上加滤镜。
+- **块面感**靠 `stroke_width`：`draw.text(..., stroke_width=2, stroke_fill=暗色)` 加粗轮廓造硬边；要更方正就 2× 超采样后按阈值二值化、`Image.BOX` 缩回、`Image.NEAREST` 再放大。
+- **位置：文字一律画在放大之后的成片分辨率层**（1920×1080），不画在 384×216 世界层。世界层 40 px 的字要占屏宽 1/10，NEAREST 放大后是一团模糊块。这条与本节「常规字幕在输出分辨率单独绘制」是同一条规则，HUD 文字同样适用。
+- 字体路径按本机候选列表取（`msyh.ttc` / `simhei.ttf` / `PingFang.ttc` / `NotoSansCJK`），跨机器验收字形与实际命中，新增字体先说明来源与使用范围。
 
 ## 按症状排查渲染
 

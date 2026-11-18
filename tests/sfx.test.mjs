@@ -121,17 +121,25 @@ test('校验器接受八种合法音效，拒绝未知类型与越界数值', ()
   assert.match(analyzeStoryboard(base([{ at: 1, type: 'boom' }])).errors.join('\n'), /project\.sfx\[0\]\.type: 必须为/);
   assert.match(analyzeStoryboard(base([{ at: 1, type: 'tick', gain: 2.5 }])).errors.join('\n'), /gain: 必须在 0–2 之间/);
   assert.match(analyzeStoryboard(base([{ at: 1, type: 'tick', pitch: 0.2 }])).errors.join('\n'), /pitch: 必须在 0.5–2 之间/);
-  assert.match(analyzeStoryboard(base([{ at: 12, type: 'tick' }])).errors.join('\n'), /必须小于 project\.duration/);
+  // 越界值要从示例分镜自己的时长推出来，别写死数字：示例从 12 秒改成 26 秒后，
+  // 写死的 at:12 变成了合法时点，这条断言就会静默失效。
+  const { duration } = loadExample().project;
+  assert.match(analyzeStoryboard(base([{ at: duration + 1, type: 'tick' }])).errors.join('\n'), /必须小于 project\.duration/);
   assert.match(analyzeStoryboard(base([{ at: -1, type: 'tick' }])).errors.join('\n'), /必须为非负数/);
 });
 
 test('校验器同时检查 scene.sfx，路径能定位到具体镜', () => {
   const data = loadExample();
+  // 示例只有一镜，这里补一个派生镜来验证 scenes[i] 路径能定位到具体镜。
+  // lyricIds 必须清空：复制来的歌词区间只覆盖第一镜，会让派生镜多出不相交的错误。
+  const extra = { ...structuredClone(data.scenes[0]), id: 'reply', start: 24, end: 30, events: [], hud: [], lyricIds: [] };
+  data.scenes.push(extra);
+  data.project.duration = 30;
+  data.chapters[data.chapters.length - 1].end = 30;
   data.scenes[0].sfx = [{ at: 1, type: 'tick' }];
-  data.scenes[1].sfx = [{ at: 7, type: 'nope' }];
+  data.scenes[1].sfx = [{ at: 25, type: 'nope' }];
   const { errors } = analyzeStoryboard(data);
-  assert.equal(errors.length, 1);
-  assert.match(errors[0], /^scenes\[1\]\.sfx\[0\]\.type/);
+  assert.deepEqual(errors, ['scenes[1].sfx[0].type: 必须为 chime、click、confirm、error、riser、tick、type、whoosh 之一']);
 });
 
 test('没有 sfx 字段时校验不受影响（向后兼容）', () => {

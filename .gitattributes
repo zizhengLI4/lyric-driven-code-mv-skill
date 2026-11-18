@@ -1,0 +1,21 @@
+# 统一行尾，避免 git diff --check 把 CRLF 的 \r 误报成「尾随空白」。
+# 背景：仓库里 .md/.py/.mjs 一半 LF 一半 CRLF，core.autocrlf=true 时
+# 新增行会带着 \r 进 diff，于是每个新增行都被报一次 trailing whitespace，
+# 真正的行尾空格反而淹没在其中。
+* text=auto eol=lf
+
+# Windows 批处理必须保持 CRLF，否则 cmd 解析会出错。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制，不做行尾转换。
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.mp3 binary
+*.mp4 binary
+*.wav binary
+*.woff binary
+*.woff2 binary
