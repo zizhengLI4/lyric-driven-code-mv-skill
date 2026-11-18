@@ -168,6 +168,22 @@ test('歌词对齐强起音时通过', t => {
   assert.match(r.stdout, /歌词 vs 强起音：2 项/);
 });
 
+test('歌词偏离强起音只警告不判错——连音起唱本来就没有瞬变', t => {
+  // 关键回归：起音检测找的是能量瞬变（鼓点、爆破音）。人声用连音长句起唱时
+  // 平滑进来，根本没有瞬变，那种"不在强起音上"是检测器盲区，不是对位错误。
+  // 实测某片 13 行歌词里 9 行与最近强起音差 100-800ms，但音频相位与 LRC
+  // 起点的一致性只有 1.2ms——错的是判据不是时间轴。所以这里必须退出 0。
+  const board = storyboard();
+  board.lyrics = [{ id: 'l1', start: 2.0, end: 5.0, text: '连音起唱的一行' }];
+  // 强起音离歌词 700ms，远超 80ms 容差
+  const { args } = setup(t, board, analysis(onsets([2.7], [1.0, 3.0, 4.0, 5.0])));
+  const r = run(args);
+  assert.equal(r.status, 0, '歌词偏离强起音不该让出片流程失败：' + r.stdout);
+  assert.match(r.stdout, /歌词 vs 强起音/);
+  // 但要列出候选，交给人耳定夺
+  assert.match(r.stdout, /候选/);
+});
+
 test('没有 --analysis 时歌词只按拍点提示，不判错', t => {
   // 关键回归：判据不可靠就不该让出片流程失败。1.9 不在 0.4 秒网格上（网格是 2.0）
   const board = storyboard();
@@ -176,7 +192,7 @@ test('没有 --analysis 时歌词只按拍点提示，不判错', t => {
   const r = run(args);
   assert.equal(r.status, 0, '缺分析数据时不能因为歌词偏离就退出 2');
   assert.match(r.stdout, /仅供参考/);
-  assert.match(r.stdout, /必须提供 analyze-audio\.mjs 的输出/);
+  assert.match(r.stdout, /无法与音频交叉核对/);
 });
 
 test('无解的歌词行要报候选并明确说不能自动改', t => {
@@ -195,6 +211,49 @@ test('无解的歌词行要报候选并明确说不能自动改', t => {
   assert.match(r.stdout, /候选 24\.300s\(\+930ms\)、22\.430s\(-940ms\)/);
   assert.match(r.stdout, /必须听着人声定/);
   assert.match(r.stdout, /不要按最近距离自动改/);
+});
+
+// ── 画面比歌词早 ──────────────────────────────────────────────────────
+test('换镜之后字幕才换，要报「画面比歌词早出来」', t => {
+  // 真实病例：lookback 在 83.649 切镜，字幕等到 84.065 才换，早 416ms＝一整拍。
+  // 这类错位切点在拍点上、歌词也在起音上，各自都对，但两者错开一拍——
+  // 原先五类检查全都抓不到，而这是观众最容易说出口的那种。
+  const board = storyboard();
+  board.scenes = [{ id: 's1', start: 0, end: 6 }, { id: 's2', start: 6, end: 12 }];
+  board.lyrics = [
+    { id: 'l1', start: 2.0, end: 6.4, text: '上一行' },
+    { id: 'l2', start: 6.4, end: 10.0, text: '下一行' },
+  ];
+  const { args } = setup(t, board, analysis(onsets([2.0, 6.4, 10.0], [1.0, 3.0, 8.0])));
+  const r = run(args);
+  assert.match(r.stdout, /画面比歌词早出来/);
+  assert.match(r.stdout, /切到 s2 @ 6\.000s/);
+  assert.match(r.stdout, /画面早 400ms/);
+  assert.match(r.stdout, /把切点挪到该行落点/);
+});
+
+test('切点与字幕换行落在同一帧时不报错位', t => {
+  // 修好之后的样子：切点 6.0 就是 l2 的起点，容差内同帧换
+  const board = storyboard();
+  board.lyrics = [
+    { id: 'l1', start: 2.0, end: 6.0, text: '上一行' },
+    { id: 'l2', start: 6.0, end: 10.0, text: '下一行' },
+  ];
+  const { args } = setup(t, board, analysis(onsets([2.0, 6.0, 10.0], [1.0, 3.0, 8.0])));
+  const r = run(args);
+  assert.doesNotMatch(r.stdout, /画面比歌词早出来/);
+  assert.match(r.stdout, /每处换镜都在容差内伴随字幕换行/);
+});
+
+test('一句歌词横跨换镜只记录不报错', t => {
+  // 真实情形：l09 从 53.253 唱到 69.908，中间 61.997 换镜，字幕本该不动。
+  // 这不是缺陷——要区分「画面先动、词后到」和「一句词跨一个镜头」。
+  const board = storyboard();
+  board.lyrics = [{ id: 'l1', start: 2.0, end: 10.0, text: '很长的一句' }];
+  const { args } = setup(t, board, analysis(onsets([2.0], [1.0, 3.0, 8.0])));
+  const r = run(args);
+  assert.doesNotMatch(r.stdout, /画面比歌词早出来/);
+  assert.match(r.stdout, /一句词横跨镜头属正常剪辑/);
 });
 
 // ── 章节 ──────────────────────────────────────────────────────────────

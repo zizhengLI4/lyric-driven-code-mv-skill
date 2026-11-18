@@ -91,6 +91,7 @@ LABEL = {
     "grid": "网格",
     "cut": "切点",
     "lyric": "歌词",
+    "cut-lyric": "画面/字幕",
     "event": "事件",
     "chapter": "章节",
     "safe-area": "安全区",
@@ -275,16 +276,17 @@ def check_events(report, storyboard, points, tolerance_ms):
 
 
 def check_lyrics(report, storyboard, points, strong_onsets, tolerance_ms):
-    """歌词按人声起音核对，不是按拍点。
+    """歌词按人声起音核对，但**只提示不判错**。
 
-    一字一拍的音乐里两者重合，但只要有切分音或拖音，拍点就会把人声甩开——
-    旧分镜正是这样，实测相对人声起音最大偏 930ms。
+    为什么不能判错：起音检测找的是能量瞬变（鼓点、爆破音、辅音起头）。
+    连音长句起唱时人声是平滑进来的，根本没有瞬变可寻——那种地方
+    "不在强起音上"是检测器的盲区，不是对位错误。而 LRC 是人手打的标注，
+    在这件事上比启发式检测可信。
 
-    对偏出容差的行，额外列出 ±1.2s 内的所有强起音候选。原因：这类偏离有两种，
-    一种是"锚错了点"（旁边就有个更近的强起音，改过去即可），另一种是
-    "这段根本没有可锚的人声"（附近唯一候选在反方向近 1 秒外）。后者只能试听定夺——
-    2026-11 那支片子有一行 LRC 是 23.37，附近强起音在 22.43 和 24.30，
-    朝任一侧吸附都是猜，猜错就是"字幕比人声早一拍"。
+    实测过：某片 13 行歌词里有 9 行与最近强起音差 100-800ms，
+    但音频相位与 LRC 起点的一致性只有 1.2ms——说明错的是判据不是时间轴。
+
+    偏出容差的行会列出 ±1.2s 内的全部强起音候选，交给耳朵定夺。
     """
     lyrics = [l for l in (storyboard.get("lyrics") or []) if isinstance(l, dict)
               and isinstance(l.get("start"), (int, float))]
@@ -292,14 +294,11 @@ def check_lyrics(report, storyboard, points, strong_onsets, tolerance_ms):
         report.info("lyric", "分镜没有歌词，跳过。")
         return
     if not strong_onsets:
-        report.warn("lyric", "没有 --analysis，歌词只能按拍点核对。一字一拍时够用，"
-                             "有切分音或拖音时拍点会把人声甩开（实测过 930ms 的偏差）——"
-                             "想知道字幕会不会早出或晚出，必须提供 analyze-audio.mjs 的输出。")
+        report.warn("lyric", "没有 --analysis，歌词无法与音频交叉核对。"
+                             "只能按拍点看看，那个判据更弱，仅供参考。")
         entries = [(l.get("id") or f"lyrics[{i}]", float(l["start"]),
                     str(l.get("text") or "").replace("\n", " ")[:22])
                    for i, l in enumerate(lyrics)]
-        # 判据本身不可靠，所以只提示不判错：拖音让歌词合理地离开拍点，
-        # 那是音乐而不是缺陷，不该让出片流程失败。
         check_points(report, "歌词 vs 拍点（仅供参考）", entries, points, tolerance_ms, "lyric",
                      severity="warning")
         return
@@ -307,7 +306,8 @@ def check_lyrics(report, storyboard, points, strong_onsets, tolerance_ms):
     entries = [(l.get("id") or f"lyrics[{i}]", float(l["start"]),
                 str(l.get("text") or "").replace("\n", " ")[:22])
                for i, l in enumerate(lyrics)]
-    check_points(report, "歌词 vs 强起音", entries, strong_onsets, tolerance_ms, "lyric")
+    check_points(report, "歌词 vs 强起音", entries, strong_onsets, tolerance_ms, "lyric",
+                 severity="warning")
 
     # 对偏出容差的行，把候选摆出来
     unresolved = []
@@ -334,6 +334,81 @@ def check_lyrics(report, storyboard, points, strong_onsets, tolerance_ms):
         else:
             report.warn("lyric", f"  · {name} 现在 {at:.3f}s「{context}」：±1.2s 内没有强起音，"
                                  f"可能这句是弱起或拖音，按拍点保留更安全。")
+
+
+def check_cut_vs_lyric(report, storyboard, tolerance_ms):
+    """查「画面比歌词早」：换镜之后字幕要等多久才换。
+
+    这是原先五类检查全都没有覆盖的一类错位，却是观众最容易说出来的那种：
+    「画面比歌词早出来」。切点落在拍点上、歌词落在起音上，两边各自都对，
+    但两者错开一拍——观众看到画面动了、词还没来。
+
+    实测过的三个真实病例：
+      · 一句 16.66 秒的歌词横跨两次换镜，字幕一次都没动；
+      · lookback 在 83.649 切镜，字幕等到 84.065 才换，早 416ms＝一整拍；
+      · leave 在 9.534 切镜，字幕 9.950 才换，同样早 416ms。
+
+    判定：换镜点之后 [0, tolerance) 内起始的歌词不算错（就是同帧换）；
+    有歌词在换镜后 tolerance 内开始、但它不是这一帧的当前行，才算错位。
+    另外报「当前行已经显示了很久」的位置——那不是错，但要知道。
+    """
+    scenes = sorted((s for s in (storyboard.get("scenes") or []) if isinstance(s, dict)),
+                    key=lambda s: s.get("start", 0))
+    lyrics = sorted((l for l in (storyboard.get("lyrics") or []) if isinstance(l, dict)
+                     and isinstance(l.get("start"), (int, float))),
+                    key=lambda l: l["start"])
+    if len(scenes) < 2 or not lyrics:
+        report.info("cut-lyric", "场景或歌词不足，跳过画面与字幕的换行关系检查。")
+        return
+
+    def lyric_at(t):
+        for l in lyrics:
+            start = float(l["start"])
+            end = l.get("end")
+            end = float(end) if isinstance(end, (int, float)) else float("inf")
+            if start - 1e-9 <= t < end - 1e-9:
+                return l
+        return None
+
+    early = []
+    stale = []
+    for scene in scenes[1:]:
+        cut = scene.get("start")
+        if not isinstance(cut, (int, float)):
+            continue
+        sid = scene.get("id") or f"@{cut}"
+        cur = lyric_at(cut + 1e-3)
+        if cur is None:
+            continue
+        offset = (cut - float(cur["start"])) * 1000.0
+        if abs(offset) <= tolerance_ms:
+            continue
+        # 换镜后 tolerance 内有一行要开始：那就是「画面先动、词后到」
+        nxt = next((l for l in lyrics
+                    if cut + 1e-9 < float(l["start"]) <= cut + 0.6), None)
+        if nxt is not None:
+            gap = (float(nxt["start"]) - cut) * 1000.0
+            early.append((sid, float(cut), nxt, gap, cur))
+        elif offset > 0:
+            stale.append((sid, float(cut), cur, offset))
+
+    if early:
+        report.warn("cut-lyric", f"{len(early)} 处换镜之后字幕才换，观众会感到"
+                                 f"「画面比歌词早出来」：把切点挪到该行落点，或把该行挪到切点，"
+                                 f"两者必须落在同一个拍点上：")
+        for sid, cut, nxt, gap, cur in early:
+            report.warn("cut-lyric",
+                        f"  · 切到 {sid} @ {cut:.3f}s，但 {nxt.get('id')} 要到 "
+                        f"{float(nxt['start']):.3f}s 才换（画面早 {gap:.0f}ms）；"
+                        f"此刻屏幕上是上一行 {cur.get('id')}")
+    else:
+        report.info("cut-lyric", "每处换镜都在容差内伴随字幕换行，或该镜本就没有新行要出。")
+
+    if stale:
+        worst = max(stale, key=lambda row: row[3])
+        report.info("cut-lyric",
+                    f"{len(stale)} 处换镜时当前行已显示较久（最长 {worst[3] / 1000.0:.2f}s，"
+                    f"{worst[0]}）；一句词横跨镜头属正常剪辑，仅记录。")
 
 
 def check_chapters(report, storyboard):
@@ -521,6 +596,7 @@ def main(argv=None):
     check_cuts(report, storyboard, points, tolerance)
     check_events(report, storyboard, points, tolerance)
     check_lyrics(report, storyboard, points, strong_onsets, tolerance)
+    check_cut_vs_lyric(report, storyboard, tolerance)
     check_chapters(report, storyboard)
     if args.video:
         check_safe_area(report, args.video)
