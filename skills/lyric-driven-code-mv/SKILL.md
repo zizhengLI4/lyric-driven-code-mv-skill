@@ -79,6 +79,8 @@ node assets/templates/starter/export.mjs --storyboard path/to/storyboard.json --
 
 ```sh
 node scripts/hud-density.mjs path/to/storyboard.json --max-gap 12        # 可读变化密度与空白窗
+python scripts/sync-audit.py path/to/storyboard.json \
+  --analysis work/audio-analysis.json --video work/mv.mp4               # 出片前一条命令查全部时间问题
 python scripts/layout-check.py path/to/storyboard.json \
   --hud "档案:56,44,596,200" --hud "神选度:1256,44,1794,200" \
   --log "56,700,640,880" --subtitle-band "360,930,1560,1020" \
@@ -95,7 +97,7 @@ node assets/templates/starter/export.mjs --storyboard path/to/storyboard.json --
 
 `scripts/lrc.mjs` 把 LRC 时点按 `--offset` 秒加到片段时钟，逐行推算 `end`；提供 `--storyboard` 时会为跨镜歌词补 `allowSceneSplit` 与原因。`scripts/new-storyboard.mjs` 生成 12 镜待填写骨架，歌词可从 JSON 直接导入。12 个画法资产位于 [assets/scenes](assets/scenes/README.md)，每个工厂都可配置主体取景位置、调色板和镜头时长。`--sfx-script PATH` 可让复制出去的 starter 使用自定义音效模块，不需要改源码；`project.draftMark:false` 可隐藏 draft 提示，状态仍会写进导出资产清单。
 
-`hud-density.mjs` 把切镜、材质、HUD、事件、音效、字幕六类变化摊到时间轴上，报最长空白窗与单镜内部空窗；`--strict` 时有空窗即非零退出。`timeline-sync.py` 从音轨取能量包络并估拍点，与切镜、字幕画进同一张图，标 `speculative` 的 BPM 只能用来发现整段踩错，不能据此宣称同步。`safe-area.py` 叠平台安全区（顶部、底部 8.5%、右侧 6.5%、4:3、9:16），字幕底边与 HUD 都要躲开，1080p 的底边下限是 92 px。`layout-check.py` 按成片像素查 HUD 之间、HUD 与字幕带之间的重叠，以及越出安全区的矩形；矩形写作 `名称:x,y,x1,y1`（左上角 + 右下角，都是绝对像素，不是宽高），`--subtitle-band` 传含底条与描边的最外层矩形；`--scenes "s09-ledger:full-ui"` 这样的整屏场景可豁免该场 HUD 检查，字幕带仍受安全区约束。`minimal-renderer.py` 是**占位与版式校验用**的最小渲染器（标题牌 + 数值 HUD + 双语字幕），**不含场景绘制，不作为成片渲染器**；要画面完成度就走 starter 或用户自己的工程。`sfx.mjs` 合成八种音效（tick/type/click/whoosh/confirm/error/riser/chime），长度严格等于 `project.duration`，供混音使用；两层对齐关系见 [音效层与卡点](references/sfx-and-beat.md)——**画面踩拍点，音效跟画面同帧，音效不踩拍**。
+`hud-density.mjs` 把切镜、材质、HUD、事件、音效、字幕六类变化摊到时间轴上，报最长空白窗与单镜内部空窗；`--strict` 时有空窗即非零退出。`sync-audit.py` 是**出片前的总闸**，一条命令核对五类时间问题：分镜网格与分析网格是否同一个 BPM、切点是否落在拍点、`sync:"beat"` 的场景事件是否落在拍点、歌词是否落在强起音、chapters 与 sections 边界是否同界且都在切点上；给 `--video` 时再实测成片里字幕距画布底/右的真实像素。**必须传 `--analysis`**：只看「切点 vs 分镜网格」会得到 0ms 的完美结论，因为切点就是从那个网格上吸附来的——网格本身错了，切点再齐也没用（旧分镜的 evidence 写着「98.8，144.1 为另一强候选未采纳」，正是这种自证循环）。没有 `--analysis` 时歌词只按拍点提示、不判错，因为拖音会让歌词合理地离开拍点。`timeline-sync.py` 从音轨取能量包络并估拍点，与切镜、字幕画进同一张图，标 `speculative` 的 BPM 只能用来发现整段踩错，不能据此宣称同步；`--align beats` 优先用分镜自带的 `music.beats` 当参考点，没有才退回自己估的拍点。`safe-area.py` 叠平台安全区（顶部、底部 8.5%、右侧 6.5%、4:3、9:16），字幕底边与 HUD 都要躲开，1080p 的底边下限是 92 px。`layout-check.py` 按成片像素查 HUD 之间、HUD 与字幕带之间的重叠，以及越出安全区的矩形；矩形写作 `名称:x,y,x1,y1`（左上角 + 右下角，都是绝对像素，不是宽高），`--subtitle-band` 传含底条与描边的最外层矩形；`--scenes "s09-ledger:full-ui"` 这样的整屏场景可豁免该场 HUD 检查，字幕带仍受安全区约束。`minimal-renderer.py` 是**占位与版式校验用**的最小渲染器（标题牌 + 数值 HUD + 双语字幕），**不含场景绘制，不作为成片渲染器**；要画面完成度就走 starter 或用户自己的工程。`sfx.mjs` 合成八种音效（tick/type/click/whoosh/confirm/error/riser/chime），长度严格等于 `project.duration`，供混音使用；两层对齐关系见 [音效层与卡点](references/sfx-and-beat.md)——**画面踩拍点，音效跟画面同帧，音效不踩拍**。
 
 校验器保留 `validateStoryboard(data) → errors[]`，提供 `analyzeStoryboard(data,{beatToleranceMs,delivery}) → {errors,warnings}`。普通提示不改变退出码；`--strict` 只是将结构检查中的警告视为失败，通过不证明可发布或 `verified`。`--delivery` 检查许可记录、音乐证据及草稿待核对清单，字段规则见时间与分镜参考。跨镜歌词、显式踩拍事件、HUD 支撑、装置/章节覆盖及授权缺项都有可定位的提示；工具不证明语义正确、许可有效或实际音画同步。
 
