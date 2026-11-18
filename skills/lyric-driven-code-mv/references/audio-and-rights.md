@@ -36,7 +36,7 @@ node scripts/analyze-audio.mjs "song.mp3" --bpm 110 --bpm-source metadata --bpm-
 
 脚本不识别人声文本、不提供逐词对齐，也不证明试听完成。将选择的方法、误差来源与待核对重音写进分镜 `music.evidence`；实际人工核对后才改 `verified` 并记录人和时间。
 
-仓库音频集成测试通过 `tests/media-tools.mjs` 探测本机工具：默认 PATH 缺 FFmpeg 时有原因地跳过实际解码测试，纯 PCM、参数及错误路径测试仍运行；显式无效的 `FFMPEG_PATH` / `FFPROBE_PATH` 会失败，避免配置错误被隐藏。
+skill 随附的音频集成测试通过 [`tests/media-tools.mjs`](../tests/media-tools.mjs) 探测本机工具：默认 PATH 缺 FFmpeg 时有原因地跳过实际解码测试，纯 PCM、参数及错误路径测试仍运行；显式无效的 `FFMPEG_PATH` / `FFPROBE_PATH` 会失败，避免配置错误被隐藏。
 
 ## 获取与记录
 

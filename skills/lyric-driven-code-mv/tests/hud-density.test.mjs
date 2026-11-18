@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { analyzeDensity, describeDensity } from '../skills/lyric-driven-code-mv/scripts/hud-density.mjs';
+import { analyzeDensity, describeDensity } from '../scripts/hud-density.mjs';
 
 // 8 秒、两镜的最小分镜：只包含字段约定里出现的字段。
 const fixture = {

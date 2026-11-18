@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { existsSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile, rm, mkdir, readdir, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,8 +8,8 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const base = new URL('../skills/lyric-driven-code-mv/assets/templates/starter/', import.meta.url);
-const source = JSON.parse(await readFile(new URL('../skills/lyric-driven-code-mv/assets/storyboard-example.json', import.meta.url), 'utf8'));
+const base = new URL('../assets/templates/starter/', import.meta.url);
+const source = JSON.parse(await readFile(new URL('../assets/storyboard-example.json', import.meta.url), 'utf8'));
 // 示例分镜按文档要求只有一镜 24 秒；这个 fixture 需要两镜来测切镜与转场，
 // 所以自己从第一镜派生第二镜，而不是依赖随发布一起改动的示例结构。
 const secondShot = (first, id, start, end) => ({
@@ -39,6 +40,52 @@ const setup = async (t, data = fixture()) => {
   const path = join(root, 'storyboard.json'); await writeFile(path, JSON.stringify(data));
   return { root, path, data };
 };
+
+
+test('已有输出默认拒绝覆盖，--overwrite 才能继续且冲突前不执行自定义音效模块', async t => {
+  const exporter = await import(new URL('export.mjs', base));
+  const { root, path, data } = await setup(t);
+  data.music.status = 'illustrative';
+  data.project.sfx = [{ at: 0.25, type: 'tick' }];
+  await writeFile(path, JSON.stringify(data));
+  const out = join(root, 'existing.mp4');
+  const manifest = `${out}.assets.json`;
+  const marker = join(root, 'sfx-was-loaded.txt');
+  const modulePath = join(root, 'custom-sfx.mjs');
+  await writeFile(out, 'old video');
+  await writeFile(manifest, 'old manifest');
+  await writeFile(modulePath, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'executed'); export const collectSfx = () => [{ at: 0.25, type: 'tick' }]; export const renderTimeline = () => ({}); export const encodeWav = () => Buffer.alloc(44);`);
+
+  const blocked = exporter.parseArgs(['--storyboard', path, '--sfx', '--sfx-script', modulePath, '--out', out, '--ffmpeg', 'missing-ffmpeg']);
+  const blockedMessages = [];
+  await assert.rejects(() => exporter.exportVideo(blocked, message => blockedMessages.push(message)), /已存在|覆盖|overwrite/);
+  assert.ok(blockedMessages.some(message => message.includes(out)));
+  assert.ok(blockedMessages.some(message => message.includes(manifest)));
+  assert.equal(await readFile(out, 'utf8'), 'old video');
+  assert.equal(await readFile(manifest, 'utf8'), 'old manifest');
+  assert.equal(existsSync(marker), false, '输出冲突时不能先执行自定义模块');
+
+  const allowed = exporter.parseArgs(['--storyboard', path, '--sfx', '--sfx-script', modulePath, '--out', out, '--overwrite', '--ffmpeg', 'missing-ffmpeg']);
+  const allowedMessages = [];
+  await assert.rejects(() => exporter.exportVideo(allowed, message => allowedMessages.push(message)), /ffmpeg|不可用/);
+  assert.ok(allowedMessages.some(message => message.includes(out)));
+  assert.ok(allowedMessages.some(message => message.includes(manifest)));
+  assert.ok(allowedMessages.some(message => /--overwrite|确认/.test(message)));
+  assert.equal(await readFile(marker, 'utf8'), 'executed');
+});
+
+test('非恢复帧目录非空时拒绝写入且保留目录内容', async t => {
+  const exporter = await import(new URL('export.mjs', base));
+  const { root, path } = await setup(t);
+  const framesDir = join(root, 'existing-frames');
+  await mkdir(framesDir);
+  const original = join(framesDir, 'user-notes.txt');
+  await writeFile(original, 'keep me');
+  const c = exporter.parseArgs(['--storyboard', path, '--frames-dir', framesDir, '--frames-only', '--ffmpeg', 'missing-ffmpeg']);
+  await assert.rejects(() => exporter.exportVideo(c, () => {}), /帧目录|frames.*not empty/i);
+  assert.equal(await readFile(original, 'utf8'), 'keep me');
+  assert.deepEqual(await readdir(framesDir), ['user-notes.txt']);
+});
 
 test('音轨覆盖只能重定位同一素材，演示记录不能冒充真实歌曲', async t => {
   const exporter = await import(new URL('export.mjs', base));
@@ -87,6 +134,20 @@ test('单帧CLI不需要媒体工具，按指定成片秒导出世界层PNG', as
   assert.throws(() => exporter.parseArgs(['--frame-time', 'NaN', '--frame-out', out]), /frame-time/);
 });
 
+
+test('单帧PNG默认拒绝覆盖，显式 --overwrite 才替换', async t => {
+  const { root, path } = await setup(t);
+  const exporter = await import(new URL('export.mjs', base));
+  const out = join(root, 'protected-frame.png');
+  await writeFile(out, 'old frame');
+  const blocked = exporter.parseArgs(['--storyboard', path, '--frame-time', '1.25', '--frame-out', out]);
+  await assert.rejects(() => exporter.exportFrame(blocked, () => {}), /已存在|覆盖|overwrite/);
+  assert.equal(await readFile(out, 'utf8'), 'old frame');
+  const allowed = exporter.parseArgs(['--storyboard', path, '--frame-time', '1.25', '--frame-out', out, '--overwrite']);
+  await exporter.exportFrame(allowed, () => {});
+  assert.notEqual(await readFile(out, 'utf8'), 'old frame');
+});
+
 test('素材清单无法发布时保留旧MP4并清理本次临时产物', async t => {
   const { requireMediaTools } = await import('./media-tools.mjs');
   const tools = requireMediaTools(t, ['ffmpeg', 'ffprobe']); if (!tools) return;
@@ -94,10 +155,36 @@ test('素材清单无法发布时保留旧MP4并清理本次临时产物', async
   const exporter = await import(new URL('export.mjs', base));
   const out = join(root, 'existing.mp4'), original = Buffer.from('old deliverable');
   await writeFile(out, original); await mkdir(`${out}.assets.json`);
-  const c = exporter.parseArgs(['--storyboard', path, '--out', out, '--ffmpeg', tools.ffmpeg, '--ffprobe', tools.ffprobe]);
+  const c = exporter.parseArgs(['--storyboard', path, '--out', out, '--overwrite', '--ffmpeg', tools.ffmpeg, '--ffprobe', tools.ffprobe]);
   await assert.rejects(() => exporter.exportVideo(c, () => {}));
   assert.deepEqual(await readFile(out), original);
   assert.ok(!(await readdir(root)).some(name => name.startsWith('.rendering-') || name.startsWith('.mv-publish-') || name.endsWith('.writing')));
+});
+
+test('并发发布到同一路径时只允许一个发布事务进入临界区', async t => {
+  const { root } = await setup(t);
+  const { publishOutput } = await import(new URL('export.mjs', base));
+  const out = join(root, 'concurrent.mp4');
+  const firstVideo = join(root, 'first.pending.mp4'), secondVideo = join(root, 'second.pending.mp4');
+  await writeFile(firstVideo, 'first video');
+  await writeFile(secondVideo, 'second video');
+  let entered;
+  const enteredGate = new Promise(resolve => { entered = resolve; });
+  let unlock;
+  const releaseGate = new Promise(resolve => { unlock = resolve; });
+  const holdFirstMove = async (from, to) => {
+    if (from === firstVideo) { entered(); await releaseGate; }
+    await rename(from, to);
+  };
+  const first = publishOutput(firstVideo, out, { output: 'first' }, holdFirstMove);
+  await enteredGate;
+  await assert.rejects(() => publishOutput(secondVideo, out, { output: 'second' }), /另一个.*发布|正在发布|publish lock/i);
+  unlock();
+  await first;
+  assert.equal(await readFile(out, 'utf8'), 'first video');
+  assert.equal(JSON.parse(await readFile(`${out}.assets.json`, 'utf8')).output, 'first');
+  assert.equal(await readFile(secondVideo, 'utf8'), 'second video');
+  assert.equal(existsSync(`${out}.publish-lock`), false, '发布结束后须释放互斥锁');
 });
 
 test('第二个文件提交失败会恢复旧交付，回滚失败会保留可定位备份', async t => {
@@ -112,7 +199,7 @@ test('第二个文件提交失败会恢复旧交付，回滚失败会保留可�
       if (rollbackFails && from.endsWith('previous-0')) throw new Error('rollback-marker');
       await rename(from, to);
     };
-    await assert.rejects(() => publishOutput(pending, out, { output: 'new' }, injectedMove), rollbackFails ? /保留备份.*rollback-marker/ : /second-commit-marker/);
+    await assert.rejects(() => publishOutput(pending, out, { output: 'new' }, injectedMove, { overwrite: true }), rollbackFails ? /保留备份.*rollback-marker/ : /second-commit-marker/);
     assert.deepEqual(await readFile(`${out}.assets.json`), oldRecords);
     const backupDirs = (await readdir(root)).filter(n => n.startsWith('.mv-publish-'));
     if (rollbackFails) {
@@ -185,7 +272,23 @@ test('像素歌词面板配置拒绝未知模式和无效颜色', async t => {
   }
 });
 
-test('draft自动全时段标识，真实歌曲必须输入音轨，恢复拒绝更换JSON或音频内容', async t => {
+test('普通底部字幕与像素面板都使用 captionStyle 指定的主副字体', async t => {
+  const exporter = await import(new URL('export.mjs', base));
+  const preview = await readFile(new URL('preview.html', base), 'utf8');
+  const { path, data } = await setup(t);
+  data.captionStyle = { mode: 'bottom', font: 'Storyboard CJK Sans', secondaryFont: 'Storyboard Latin Serif' };
+  await writeFile(path, JSON.stringify(data));
+  const c = await exporter.loadProject(exporter.parseArgs(['--storyboard', path]));
+  const ass = exporter.createASS(c);
+  assert.match(ass, /Style: Caption,Storyboard CJK Sans,/);
+  assert.match(ass, /Style: CaptionSecondary,Storyboard Latin Serif,/);
+  assert.ok(ass.includes('\\rCaptionSecondary'));
+  const bottomBranch = preview.split('else if (cue) {')[1].split('drawChapterCard(t, captionStyle)')[0];
+  assert.match(bottomBranch, /fontFamily/);
+  assert.match(bottomBranch, /secondaryFontFamily/);
+});
+
+test('draft 默认不烧水印，显式开启才烧，真实歌曲必须输入音轨，恢复拒绝更换JSON或音频内容', async t => {
   const data = fixture(); data.music.status = 'draft'; data.project.audio.timebase = 'source'; data.project.sourceOffset = 2;
   const { root, path } = await setup(t, data);
   const exporter = await import(new URL('export.mjs', base));
@@ -193,17 +296,27 @@ test('draft自动全时段标识，真实歌曲必须输入音轨，恢复拒绝
   const audio = join(root, 'song.wav'); await writeFile(audio, exporter.synthesizeWAV());
   data.project.audio.path = 'song.wav'; await writeFile(path, JSON.stringify(data));
   const c = await exporter.loadProject(exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', join(root, 'frames')]));
-  assert.equal(c.audioStart, 2); assert.match(exporter.createASS(c), /待核对落点/);
-  assert.match(exporter.createASS(c), /0:00:04\.00,Notice/);
+  assert.equal(c.draftMark.enabled, false);
+  assert.equal(c.audioStart, 2);
+  assert.doesNotMatch(exporter.createASS(c), /待核对落点/);
+  assert.deepEqual(c.draftMark, { enabled: false, text: null });
   await exporter.prepareFrames(c, () => {});
   const manifest = JSON.parse(await readFile(join(root, 'frames', 'render-config.json'), 'utf8'));
   assert.equal(manifest.frameCount, 16);
-  data.project.draftMark = false; data.project.draftMarkText = '内部草稿提示'; await writeFile(path, JSON.stringify(data));
+  data.project.draftMark = true; data.project.draftMarkText = '内部草稿提示'; await writeFile(path, JSON.stringify(data));
+  const shownDir = join(root, 'frames-with-draft-mark');
+  const shown = exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', shownDir, '--frames-only']);
+  await exporter.exportVideo(shown, () => {});
+  const shownAssets = JSON.parse(await readFile(join(shownDir, 'asset-manifest.json'), 'utf8'));
+  assert.deepEqual(shownAssets.draftMark, { enabled: true, text: '内部草稿提示' });
+  assert.match(exporter.createASS(await exporter.loadProject(shown)), /内部草稿提示/);
+  data.project.draftMark = false; await writeFile(path, JSON.stringify(data));
   const hiddenDir = join(root, 'frames-with-hidden-draft-mark');
   const hidden = exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', hiddenDir, '--frames-only']);
   await exporter.exportVideo(hidden, () => {});
   const assets = JSON.parse(await readFile(join(hiddenDir, 'asset-manifest.json'), 'utf8'));
   assert.deepEqual(assets.draftMark, { enabled: false, text: null });
+  assert.equal(assets.musicStatus, 'draft', '不烧水印不等于把状态洗成 verified');
   assert.doesNotMatch(exporter.createASS(await exporter.loadProject(hidden)), /内部草稿提示|待核对落点/);
   data.lyrics[0].text = '修改后的字幕'; await writeFile(path, JSON.stringify(data));
   const changed = await exporter.loadProject(exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', join(root, 'frames'), '--resume']));
@@ -226,7 +339,7 @@ test('真实音轨按sourceOffset裁剪且JSON决定输出音视频时长', asyn
   const generated = spawnSync(tools.ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'aevalsrc=if(lt(t\\,2)\\,0\\,0.2*sin(2*PI*440*t)):s=48000:d=8', '-y', audio], { windowsHide: true });
   assert.equal(generated.status, 0, generated.stderr?.toString());
   const exporter = await import(new URL('export.mjs', base));
-  const c = exporter.parseArgs(['--storyboard', path, '--audio', audio, '--out', join(root, 'actual.mp4'), '--ffmpeg', tools.ffmpeg, '--ffprobe', tools.ffprobe]);
+  const c = exporter.parseArgs(['--storyboard', path, '--audio', audio, '--out', join(root, 'actual.mp4'), '--overwrite', '--ffmpeg', tools.ffmpeg, '--ffprobe', tools.ffprobe]);
   const result = await exporter.exportVideo(c, () => {});
   assert.ok(Math.abs(Number(result.format.duration) - 4) < 0.04);
   assert.equal(result.streams.find(s => s.codec_type === 'video').nb_frames, '16');

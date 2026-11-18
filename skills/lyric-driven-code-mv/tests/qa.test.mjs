@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { collectSampleTimes, runDeterminismQA } from '../skills/lyric-driven-code-mv/scripts/qa.mjs';
+import { collectSampleTimes, runDeterminismQA } from '../scripts/qa.mjs';
 
 const frame = value => ({ width: 1, height: 1, data: new Uint8ClampedArray([value, 0, 0, 255]) });
 
@@ -175,7 +175,7 @@ export async function cleanup() {
   return {
     dir,
     cleanupFile,
-    run: args => spawnSync(process.execPath, [fileURLToPath(new URL('../skills/lyric-driven-code-mv/scripts/qa.mjs', import.meta.url)), modulePath, ...args], { encoding: 'utf8', timeout: 2500, windowsHide: true })
+    run: args => spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/qa.mjs', import.meta.url)), modulePath, ...args], { encoding: 'utf8', timeout: 2500, windowsHide: true })
   };
 }
 

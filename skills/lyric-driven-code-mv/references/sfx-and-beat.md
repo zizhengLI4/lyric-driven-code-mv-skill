@@ -151,7 +151,7 @@ ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=input
 
 - 音效合成不证明"好听"。它只保证落在你要的时刻、长度严格等于成片、不削顶。
 - 混音权重按片子调：数据可视化片（密集 tick）建议 0.7–0.85；叙事片（少而重）建议 0.9–1.0。
-- 音效不能替代音乐证据状态。`music.status` 仍按 [时间与分镜](storyboard-and-timing.md) 的规则填 `illustrative` / `draft` / `verified`。
+- 音效不能替代音乐证据状态。`music.status` 的 `illustrative` / `draft` / `verified` 定义见主文档“时间与分镜”参考入口。
 - 全部音效都是合成音，不带人声与环境声。需要真实环境音时另找素材并记录授权。
 
 ## 工具链位置

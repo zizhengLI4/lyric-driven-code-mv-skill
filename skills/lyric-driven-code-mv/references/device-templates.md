@@ -1,6 +1,6 @@
 # 装置模板（可直接粘的骨架）
 
-选型看 [装置、章节与长镜头](story-devices.md)，这里给的是**能直接粘进分镜的骨架**：一个 `device` 段、一两个 `hud` 项、一组带数值的事件，字段与 `assets/storyboard-example.json` 完全一致。
+装置选型见主文档的“装置与章节”参考入口；这里给的是**能直接粘进分镜的骨架**：一个 `device` 段、一两个 `hud` 项、一组带数值的事件，字段与 `assets/storyboard-example.json` 完全一致。
 
 | 文件 | `device.type` | 一句话 | HUD |
 |---|---|---|---|
@@ -10,11 +10,11 @@
 | [settlement-panel.json](../assets/devices/settlement-panel.json) | `game-system` | 一段关系的结算与评级 | 总分（`score`）+ 评级（`badge`） |
 | [dual-axis-slider.json](../assets/devices/dual-axis-slider.json) | `timeline` | 时间和心情做成两根轴 | 时间轴百分比（`axis`） |
 
-`device.type` 的合法值来自 [装置、章节与长镜头](story-devices.md)：`chat`、`game-system`、`timeline`、`counter`、`chapter-card`、`viewfinder`、`material-stage`。校验器会拒绝其他取值。
+`device.type` 的合法值为：`chat`、`game-system`、`timeline`、`counter`、`chapter-card`、`viewfinder`、`material-stage`。校验器会拒绝其他取值。
 
 ## 怎么用（三步）
 
-1. **选一个**：按 `story-devices.md` 的决策表定类型，不按"哪个好看"定。
+1. **选一个**：按主文档“装置与章节”参考入口的决策表定类型，不按"哪个好看"定。
 2. **抄 `device` 段**，改 `name` 与 `purpose`，把 `rules` 换成你这一支片的规矩（规矩要能被画面验证：能不能见面、有没有时间戳、谁在看）。
 3. **抄 `hud` + `events`**，然后**按你自己的歌词重排时间**：
 

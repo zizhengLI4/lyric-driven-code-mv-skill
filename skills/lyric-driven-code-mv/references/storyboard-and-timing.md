@@ -80,6 +80,8 @@ starter 还包含一层演出缩放：JSON 路线在调用 `SCENE_RENDERERS[scen
 | `scene.materialVariant` | `{id,label,change}`；同构图换季节、材质或年代时记录可见变化，画法仍需自行实现 |
 | `scene.hud[]` | `{id,type,label,value?,min?,max?,meaning}`；`value` 若提供为非空字符串或有限数，`bar` 要求数值落在 `min..max` 内；类型可为 `counter/bar/heart/status/clock/badge/log/checklist/axis/level/score/banner`，负值、归零、损坏和失败均可作为语义结果 |
 | `scene.actors[]` | `{id,costume}` 引用根人物表 |
+
+主角的完整外观卡不塞进 schema 必填字段，见主文档的“主角外观卡与衣装连续性”参考入口（此处不建立 reference 之间的跳转；实际入口在 `SKILL.md`）。JSON 只负责稳定 actor ID、可用 costume 名称和每镜引用；外观卡负责轮廓、衣装、配色、识别物、像素简化和故事功能。用户已给的外观优先于自动补全。
 | `scene.events[]` | `{at,action,hud?,sync?,lyricIds?,meaning?,support?}`；`at` 为成片秒，位于镜头内且升序 |
 | `scene.exit` | `{type,dur,origin?,target?}`；类型为 cut/dissolve/ripple/water |
 
@@ -136,4 +138,4 @@ const state = events.filter(e => e.at <= t).reduce(applyEvent, initialState());
 node scripts/qa.mjs path/to/frame.mjs --duration 12 --fps 30 --storyboard path/to/storyboard.json --out work/qa.json
 ```
 
-脚本自动覆盖首尾、每镜首/中/尾、转场前/中/后及事件周围，用正序、重复、逆序和固定乱序比较 SHA-256。`--times 0,5.1,5.55,6` 可专查落点。其他框架提供一个导出相同 RGBA 契约的适配模块；浏览器 profile、资源准备及预热见 [渲染与恢复](dependencies-and-delivery.md#渲染与恢复)。报告只检查所抽样时间在当前环境的确定性。
+脚本自动覆盖首尾、每镜首/中/尾、转场前/中/后及事件周围，用正序、重复、逆序和固定乱序比较 SHA-256。`--times 0,5.1,5.55,6` 可专查落点。其他框架提供一个导出相同 RGBA 契约的适配模块；浏览器 profile、资源准备及预热按主文档“依赖与交付”参考入口执行。报告只检查所抽样时间在当前环境的确定性。

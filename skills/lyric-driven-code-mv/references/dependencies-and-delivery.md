@@ -1,8 +1,51 @@
 # 依赖与交付
 
+## 环境预检与平台准备
+
+先在 skill 根目录运行环境预检。它只诊断，不安装软件；根据实际输出选择能继续的工作，不要把缺项隐藏成“已配置”。核心脚本需要 Node.js 17.0.0；随包 `node --test` 测试需要 Node.js 18.1.0；依赖 Pillow 的图像工具需要 `Pillow>=10.0`。完整检查项由 `scripts/check_environment.py` 统一报告：
+
+| 状态 | 含义 | 可继续的范围 |
+|---|---|---|
+| `ready` | Node、FFmpeg/FFprobe、`ass`/libass、字体和 Pillow 均可用 | 可走完整分析、渲染、字幕与测试 |
+| `partial` | 核心 Node 可用，但媒体、字体或 Pillow 等可选能力缺失 | 可做不依赖缺项的分镜和 Node 校验；按报告缩小范围 |
+| `needs_setup` | Node 不可启动或低于脚本最低版本 | 先补齐核心运行时，不能把核心校验当作通过 |
+
+Windows PowerShell：
+
+```powershell
+Set-Location 'C:\path\to\lyric-driven-code-mv'
+Get-Command node, ffmpeg, ffprobe, python -ErrorAction SilentlyContinue
+python scripts/check_environment.py
+# 只有要运行 Pillow 工具时才安装随包依赖：
+python -m pip install -r requirements.txt
+```
+
+macOS/Linux：
+
+```sh
+cd /path/to/lyric-driven-code-mv
+command -v node ffmpeg ffprobe python3
+python3 scripts/check_environment.py
+# 只有要运行 Pillow 工具时才安装随包依赖：
+python3 -m pip install -r requirements.txt
+```
+
+`python`/`python3` 只表示本机已有的 Python 命令；如果预检报告缺 Node、FFmpeg、FFprobe、字体或 `ass` 滤镜，先按本机受信任的系统安装方式处理，再重新运行预检。不要在 Skill 中硬编码包管理器、自动下载字体/浏览器、注册 API 或代用户付费。若只做分镜结构校验，可先不装 Pillow 和 FFmpeg；若要导出、烧字幕、抽帧或运行完整媒体测试，则必须按报告补齐对应能力。
+
+## 最小可用子集
+
+| 目标 | 最少步骤 | 不应声称的结果 |
+|---|---|---|
+| 只有歌名/歌词/分镜，没有真实音频 | `validate-storyboard.mjs` → `hud-density.mjs` | 不证明歌词时点、拍点或音画同步；状态保持 `illustrative` 或按项目记录为未核对 |
+| 有真实音频，准备核对时间关系 | 先跑上面两条，再用 `analyze-audio.mjs` 生成同片段报告，最后用 `sync-audit.py --analysis` | 机器候选仍不是人工听辨；不要把报告自动升级为 `verified` |
+| 需要看趋势或排查具体画面 | 按需使用 `timeline-sync.py`、`visualize-sync.mjs`、`safe-area.py`、`layout-check.py`、`film-sheet.py` | 单个图表不证明叙事成立、许可有效或最终观感通过 |
+| 需要出片 | 在分镜和时间证据完成后使用 starter/用户工程，再做 FFprobe、完整解码和抽帧 | 技术流/时长通过不等于语义、听感或发布权利通过 |
+
+Node 结构校验与变化密度工具只用内置模块；没有 Pillow、FFmpeg 或真实音频时仍可完成第一行。不要为了让“全流程”看起来完整而安装可选依赖或运行无关工具。
+
 ## 一种路线，最少依赖
 
-先检查已有 Node、FFmpeg、FFprobe、工程依赖/锁文件及浏览器。版本按当前官方要求选择，不能把本机版本当成通用要求。
+环境状态与安装命令见上一节。再检查工程依赖、锁文件和浏览器；其他框架的版本按对应官方要求选择，不能把本机版本当成通用要求。
 
 | 路线 | 必需 | 按需要增加 |
 |---|---|---|
@@ -14,6 +57,12 @@
 Canvas/SVG 是浏览器原生能力；已有浏览器不代表框架要求的版本已配置。`npx`、脚手架或首次渲染可能下载包/浏览器，执行前说明。Remotion 相关包保持兼容版本、授权按官方说明核实。额外 Python 分析、模型、PixiJS/Three.js、真实游戏系统只在任务需要时选用，不为离线候选分析默认安装。
 
 使用目标环境已有对应 skill：HTML 视频先读 hyperframes 路由，React 视频先读 remotion-best-practices，媒体检查可用 ffmpeg；这些个人 skill 缺失时沿用官方契约与已有工具，不要求整套安装。
+
+## 输出保护与本地执行边界
+
+starter 导出默认拒绝覆盖已有单帧 PNG、MP4 或旁边的 `.assets.json`；确认替换旧交付时显式传 `--overwrite`。渲染先写临时 MP4，再用成对发布更新成片和清单；发布失败应恢复旧文件，回滚失败则保留可定位备份目录。帧目录的 `--resume` 也只复用通过配置、尺寸和逐帧哈希核对的帧。
+
+`--sfx-script PATH` 会动态导入并执行本地 ES module，使用当前 Node 进程权限；只允许已检查、可信的代码。`--ffmpeg PATH` 和 `--ffprobe PATH` 会直接执行指定程序；日志应展示实际路径，显式无效路径必须失败。预览服务只监听 `127.0.0.1`，但会提供 `project.json`（时间线、时长、seed）和模板源码；不要把端口暴露给公共网络。
 
 ## 从已有模板看到画面
 

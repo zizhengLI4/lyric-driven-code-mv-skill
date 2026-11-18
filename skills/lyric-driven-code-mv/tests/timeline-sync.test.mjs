@@ -6,8 +6,9 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync, statSync 
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
-const SCRIPT = resolve('skills/lyric-driven-code-mv/scripts/timeline-sync.py');
+const SCRIPT = fileURLToPath(new URL('../scripts/timeline-sync.py', import.meta.url));
 const PY = process.platform === 'win32' ? 'python' : 'python3';
 
 // 8 秒 / 8kHz 单声道 WAV：在给定时刻放短促脉冲，其余近乎静音。

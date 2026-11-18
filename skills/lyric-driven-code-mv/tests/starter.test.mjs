@@ -5,10 +5,11 @@ import { createHash } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
 import { join, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { requireMediaTools } from './media-tools.mjs';
 
-const base = new URL('../skills/lyric-driven-code-mv/assets/templates/starter/', import.meta.url);
+const base = new URL('../assets/templates/starter/', import.meta.url);
 
 test('模板提供不依赖外部包的纯帧入口', async () => {
   assert.ok(existsSync(fileURLToPath(new URL('frame.mjs', base))), '缺少纯帧模块 frame.mjs');
@@ -122,6 +123,7 @@ test('导出CLI校验配置，并给出易读的失败退出码', async () => {
   assert.equal(parseArgs(['--sfx', '--storyboard', 'x.json']).sfx, true);
   assert.equal(parseArgs(['--sfx', '--storyboard', 'x.json']).sfxGain, 0.85);
   assert.equal(parseArgs(['--sfx-gain', '0.6', '--storyboard', 'x.json']).sfxGain, 0.6);
+  assert.equal(parseArgs(['--overwrite']).overwrite, true);
   assert.equal(parseArgs(['--ffmpeg', './tools/ffmpeg.exe']).ffmpeg, resolve('./tools/ffmpeg.exe'));
   const cli = fileURLToPath(new URL('export.mjs', base));
   const run = args => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 15000 });
@@ -129,6 +131,38 @@ test('导出CLI校验配置，并给出易读的失败退出码', async () => {
   const invalid = run(['--fps', '0']); assert.equal(invalid.status, 1); assert.doesNotMatch(invalid.stderr, /\n\s+at /);
   const unavailable = run(['--ffmpeg', join(process.cwd(), 'missing-ffmpeg-starter-991.exe')]);
   assert.equal(unavailable.status, 1); assert.match(unavailable.stderr, /ffmpeg/); assert.doesNotMatch(unavailable.stderr, /\n\s+at /);
+});
+
+
+test('预览服务器只绑定回环地址，且project.json只返回预览所需状态', async t => {
+  const { createPreviewServer, parseArgs, loadProject } = await import(new URL('export.mjs', base));
+  const storyboard = JSON.parse(readFileSync(new URL('../../../assets/storyboard-example.json', base), 'utf8'));
+  const { root } = await (async () => {
+    const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const directory = await mkdtemp(join(tmpdir(), 'preview-safety-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const path = join(directory, 'storyboard.json');
+    await writeFile(path, JSON.stringify(storyboard));
+    return { root: directory, path };
+  })();
+  const c = await loadProject(parseArgs(['--storyboard', join(root, 'storyboard.json')]));
+  const server = createPreviewServer(c);
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  assert.equal(server.address().address, '127.0.0.1');
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/project.json`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /application\/json/);
+  const project = await response.json();
+  assert.equal(project.duration, c.duration);
+  assert.equal(project.seed, c.seed);
+  assert.ok(project.timeline);
+  assert.equal(Object.hasOwn(project, 'audioPath'), false, '预览JSON不暴露本机音频路径');
+  const unknown = await fetch(`http://127.0.0.1:${server.address().port}/.env`);
+  assert.equal(unknown.status, 404);
 });
 
 test('实际编码后的输出路径错误返回失败，清理临时MP4和音轨目录', t => {

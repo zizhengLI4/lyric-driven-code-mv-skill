@@ -14,17 +14,21 @@
 | `skills/lyric-driven-code-mv/agents/openai.yaml` | 技能的界面名称、描述和默认提示 | YAML 字段及技能名称；与入口的用途一致 |
 | `references/storyboard-and-timing.md` | JSON、成片时钟、镜头事件和转场契约 | 校验器、模板执行范围及相关测试 |
 | `references/audio-and-rights.md` | 音频分析、素材来源、许可与署名 | 分析输出、音轨选择和实际交付记录 |
-| `references/sync-review.md` | 能量、候选拍点、镜头和字幕的复核图 | 输入时基、误差含义、器乐分支及规模限制 |
+| `references/sync-review.md` | 四个时间工具的选型与同步复核 | 用途、输入、输出、证据边界，以及 SVG/JSON 限制 |
 | `references/pixel-game-visuals.md` | 人物演出、像素画面、摄像机与字幕 | 最亮/最暗画面、镜头边缘和最终输出层 |
 | `references/dependencies-and-delivery.md` | 依赖、渲染资源、恢复与验收 | QA、媒体工具与导出命令 |
 | `scripts/` | 音频分析、分镜校验、RGBA 确定性检查 | API、CLI 帮助、错误路径、测试与文档 |
 | `assets/templates/starter/` | 可复制、可独立运行的原创最小工程 | 复制后运行、真实音轨、字幕、预览与恢复 |
 | `assets/storyboard-example.json` | 可校验、可执行的演示分镜 | 与模板画法、音乐提示和许可说明一致 |
-| `tests/` | 可复现的契约与错误路径检查 | 新字段、参数和既有断言同步更新 |
+| `skills/lyric-driven-code-mv/requirements.txt`、`skills/lyric-driven-code-mv/scripts/check_environment.py`、`skills/lyric-driven-code-mv/tests/` | 随 skill 分发的 Python 依赖清单与可复现契约/错误路径检查 | 安装副本是否能独立找到依赖并运行测试；新字段、参数和既有断言同步更新 |
 
 表内 `references/`、`scripts/`、`assets/` 均位于 `skills/lyric-driven-code-mv/` 下。新增资料先判断是否值得作为按需参考；不要把故障记录、长篇案例或全部接口细节堆进入口。功能已经写成脚本时，文档说明何时调用、输入输出和限制，避免重复维护两份实现。
 
 主页保留“自主研制”的定位与“给你的 AI 一首歌，再把这个技能丢给它”的使用方式。工具或素材所要求的许可、署名和来源记录应在对应文件中完整保留。
+
+### 版本标识
+
+当前 Skill 校验入口要求 `name`/`description`，允许可选 `metadata`，但当前工作副本未发现 release tag 或已声明的语义化版本流程。因此不添加未经宿主约定的顶层 `version`，未发布改动以 Git 提交 SHA 精确标识；以后确认正式发布流程后，再把语义化版本放进受支持的 `metadata.version`，并同步更新发布记录。
 
 ## 2. 接收反馈：先核版本，再处理问题
 
@@ -104,6 +108,7 @@ node --version
 ffmpeg -version
 ffprobe -version
 
+python skills/lyric-driven-code-mv/scripts/check_environment.py
 node skills/lyric-driven-code-mv/scripts/analyze-audio.mjs --help
 node skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs --help
 node skills/lyric-driven-code-mv/scripts/qa.mjs --help
@@ -111,7 +116,9 @@ node skills/lyric-driven-code-mv/scripts/visualize-sync.mjs --help
 node skills/lyric-driven-code-mv/assets/templates/starter/export.mjs --help
 
 node skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs skills/lyric-driven-code-mv/assets/storyboard-example.json --delivery
+Push-Location 'skills/lyric-driven-code-mv'
 node --test
+Pop-Location
 ```
 
 已有媒体工具位于非 PATH 路径时，可在当前 PowerShell 会话设置 `$env:FFMPEG_PATH` 和 `$env:FFPROBE_PATH`，值应为已有程序的真实路径。默认 PATH 缺工具时，媒体集成测试可带明确原因跳过，纯逻辑测试继续运行；显式无效配置应失败。发布前须在媒体工具可用的环境实际跑集成检查，不能把跳过记成导出通过。
@@ -189,6 +196,28 @@ node skills/lyric-driven-code-mv/scripts/visualize-sync.mjs 'path/to/storyboard.
 | 每月人工维护时 | 整理未解决问题、重复反馈、过期链接和首次使用障碍 | 待办优先级与下次验证目标 |
 
 按月检查是维护建议；它不会自动创建定时任务或安装软件。变更应由真实需求推动，不为追版本无条件升级依赖。
+
+### 本项实现：补齐无歌词段落推进与主角视觉设计
+
+#### 无歌词副歌、间奏与留白
+
+当歌曲中段出现没有歌词的副歌、间奏或长留白时，不能默认保持静止空镜、重复上一帧或只让字幕停留。下一项实现时要沿已查证的歌曲背景和已建立的故事线继续发展视频：至少让人物目标、行动、反馈、道具状态、环境/材质、镜头关系或 HUD 中的一项产生有因果的变化；重复副歌要增加新信息、视角、代价或回应。
+
+这不是要求每一秒都塞满动作：如果故事确实需要等待或停顿，画面可以慢，但要能看出等待正在发生（例如倒计时、灯光变化、人物微动作、道具位移、环境响应、镜头推进或状态变化），并在分镜里写明留白的叙事结果。新延伸的角色事件、道具和视觉隐喻标为 `creative`，不能把它包装成歌曲作者的真实经历。
+
+#### 主角外观卡与衣装连续性
+
+主角不能只用“少年/少女”“忧郁”“穿外套”等泛化词代替设计。正式分镜和主视觉帧之前，为主角建立可画、可复用的外观卡，并把各项选择连回歌曲背景、人物身份或故事功能：至少明确整体轮廓/体态、头发与脸部识别点、主辅配色、上装与下装的具体款式/层次、鞋、一个有辨识度的配饰或随身物，以及适用于目标像素尺寸的简化方案。不能在实际画面尺度读出的细节不要堆进设定。
+
+外观卡要说明基础衣装，以及故事推进中哪些外观/道具状态会改变、为何改变；跨镜保持身份、服装和颜色连续，只有故事明确推动时才换装或损坏。用户已指定人物外观时原样保留，只补未指定且不冲突的细节。把外观卡放在项目 brief/角色资产说明中，并与 storyboard 的稳定 actor ID、`actors[].costumes[]` 名称及 `scene.actors[]` 引用对齐；本项先不增加必填 JSON 字段。
+
+**下一项验收：** 用至少一个含无歌词副歌/间奏的分镜 fixture 做红→绿测试；`hud-density.mjs` 不应把该段判成无解释的长空窗，重复段落应能读出新增后果；同时保留有意留白、器乐叙事字幕和不强制每镜踩拍的兼容性。再验证主角外观卡包含上述可视字段、选择能回连故事功能、目标像素尺寸下剪影和识别点可读、各镜 costume 引用一致，并确保用户已给外观不会被覆盖。
+
+**本次实现记录（2026-11-18）：** 主文档已改为“先生成主角外观卡，再构思阻碍、配角和世界规则”；新增 `references/character-design.md` 说明外观卡、衣装状态和像素可读性；新增 `assets/storyboard-no-lyric-chorus.json` 与导航测试，示范无歌词副歌通过纸船偏航、收回/放下缆线、改变岸灯和远岸回应继续推进故事。没有新增必填 JSON 字段，完整回归为 387 项通过。
+
+**本项实现记录（2026-11-18）：** starter 对单帧 PNG、MP4 和 `.assets.json` 默认拒绝覆盖，显式 `--overwrite` 才允许替换；输出冲突检查先于分镜加载和自定义音效模块执行。两文件发布失败会恢复旧交付，回滚失败保留备份。`--sfx-script`、自定义 FFmpeg/FFprobe 的信任和执行范围已写入 starter/依赖文档并在导出日志显示实际路径；预览服务器验证为仅监听 `127.0.0.1`，`/project.json` 只返回预览状态字段。
+
+**本项实现记录（2026-11-18）：** 主文档加入“核心三步与最小可用子集”：无真实音频时只证明分镜结构与可读变化，有真实音频时才进入 `analyze-audio`/`sync-audit`，媒体与图像工具按需使用；README 增加仓库根、skill 根、工程目录和安装目录的路径约定。
 
 建议长期保留以下回归主题：
 

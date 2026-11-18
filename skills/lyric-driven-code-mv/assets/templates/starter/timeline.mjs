@@ -119,7 +119,11 @@ export function createTimeline(data, sceneIds = ['send', 'receive']) {
     return { id: cue.id, start: cue.start, end: Math.min(cue.end, p.duration), zh, en: cue.en ?? '' };
   });
   const status = data.music.status;
-  const notice = status === 'illustrative' ? (text(data.music.presentationNotice) ? data.music.presentationNotice : '演示时点 · 原创合成节奏') : status === 'draft' ? (p.draftMark === false ? '' : (text(p.draftMarkText) ? p.draftMarkText : '草稿 · 待核对落点')) : '';
+  const notice = status === 'illustrative'
+    ? (text(data.music.presentationNotice) ? data.music.presentationNotice : '演示时点 · 原创合成节奏')
+    : status === 'draft' && p.draftMark === true
+      ? (text(p.draftMarkText) ? p.draftMarkText : '草稿 · 待核对落点')
+      : '';
   let chapters = [];
   if (data.chapters !== undefined) {
     if (!Array.isArray(data.chapters)) fail('chapters须为数组');

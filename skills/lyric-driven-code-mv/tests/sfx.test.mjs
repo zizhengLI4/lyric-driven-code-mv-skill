@@ -5,13 +5,13 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 
-import { SFX, SAMPLE_RATE, collectSfx, encodeWav, listSfx, renderSfx, renderTimeline } from '../skills/lyric-driven-code-mv/scripts/sfx.mjs';
-import { analyzeStoryboard } from '../skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs';
+import { SFX, SAMPLE_RATE, collectSfx, encodeWav, listSfx, renderSfx, renderTimeline } from '../scripts/sfx.mjs';
+import { analyzeStoryboard } from '../scripts/validate-storyboard.mjs';
 
 const EXPECTED = ['chime', 'click', 'confirm', 'error', 'riser', 'tick', 'type', 'whoosh'];
 
 const loadExample = () => JSON.parse(
-  readFileSync(new URL('../skills/lyric-driven-code-mv/assets/storyboard-example.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../assets/storyboard-example.json', import.meta.url), 'utf8'),
 );
 
 test('音效表就是这八种，顺序稳定', () => {
@@ -150,7 +150,7 @@ test('没有 sfx 字段时校验不受影响（向后兼容）', () => {
 
 test('示范分镜本身通过校验，且事件时间都落在 0.5s 拍点网格上', () => {
   const demo = JSON.parse(
-    readFileSync(new URL('../skills/lyric-driven-code-mv/assets/storyboard-sfx-demo.json', import.meta.url), 'utf8'),
+    readFileSync(new URL('../assets/storyboard-sfx-demo.json', import.meta.url), 'utf8'),
   );
   assert.deepEqual(analyzeStoryboard(demo).errors, []);
   const beats = new Set(demo.music.beats);
@@ -182,7 +182,7 @@ test('音效混音保持音乐 RMS 不低于原始 RMS 的 90%', async t => {
   };
   const originalRms = decode(audioPath);
   const events = Array.from({ length: 45 }, (_, i) => ({ at: 0.1 + i * 0.064, type: 'click', gain: 0.1 }));
-  const { mixSfx } = await import('../skills/lyric-driven-code-mv/assets/templates/starter/export.mjs');
+  const { mixSfx } = await import('../assets/templates/starter/export.mjs');
   await mixSfx({ ffmpeg: tools.ffmpeg, sfx: events, sfxGain: 0.85, duration: 3 }, directory, () => {});
   const mixedRms = decode(join(directory, 'audio.wav'));
   assert.ok(mixedRms >= originalRms * 0.9, `mixed RMS ${mixedRms} must remain >= 90% of source RMS ${originalRms}`);

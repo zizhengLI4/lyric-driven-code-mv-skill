@@ -123,6 +123,7 @@
 **① 分析音轨，拿到拍点候选**
 
 ```powershell
+python skills/lyric-driven-code-mv/scripts/check_environment.py
 node skills/lyric-driven-code-mv/scripts/analyze-audio.mjs 'path/to/song.wav' --start 37.2 --duration 12 --out work/analysis.json
 ```
 
@@ -220,6 +221,15 @@ ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=input
 - 不能：BPM 永远带半速/双速歧义（80 BPM 的歌在 160 BPM 网格上也"对得齐"），工具把歧义列出来，选哪个要人耳定。
 - 字幕不必逐句贴拍；只有显式标了 `sync:"beat"` 的事件才受 80 ms 容差约束。
 
+## 路径约定
+
+- **仓库根目录**：包含 `README.md`、`MAINTENANCE.md` 和 `skills/`；README 中以 `skills/lyric-driven-code-mv/...` 开头的命令从这里运行。
+- **skill 根目录**：`skills/lyric-driven-code-mv/`；SKILL.md 和 references 中的 `scripts/...` 命令从这里运行，安装后对应安装副本的 skill 目录。
+- **工程目录**：你复制 starter 或创建 HyperFrames/Remotion 工程后保存分镜、音频、帧目录和输出的目录；工程自己的导出命令从工程目录运行。
+- **安装目录**：复制给 Codex 的 `skills/lyric-driven-code-mv` 副本；不要把生成的 MP4、WAV、PNG 或个人音轨回写到仓库。
+
+先判断当前目录再照抄命令：路径写法不同不代表需要复制一套脚本；只要把命令中的根路径换成实际仓库、skill 或工程目录即可。
+
 ## 从零到成片
 
 第一次用、又不打算让 AI 代劳的，读 [GETTING-STARTED.md](GETTING-STARTED.md)：它把装依赖、装 skill、跑通 12 秒、单帧排错、接入自己的歌、离线找拍点、三档校验、断点续渲和验收串成一条可以直接照抄的路径，每一步都给出实测输出和出错处理。文中所有耗时、帧数、BPM 与偏差毫秒均为真实运行结果。
@@ -236,7 +246,17 @@ if (Test-Path -LiteralPath $taskSkillTarget) { throw '同名 skill 已存在，�
 Copy-Item -LiteralPath './skills/lyric-driven-code-mv' -Destination $taskSkillTarget -Recurse
 ```
 
-安装 skill 不安装视频框架或模型。最小模板只用已有 Node、FFmpeg、FFprobe；选择其他框架、安装依赖/字体或使用 API 前先说明。
+`requirements.txt` 与 `tests/` 已包含在 skill 目录中，复制后不需要再从仓库根目录取文件。最小模板不需要安装 Python 包；若要运行依赖 Pillow 的 Python 工具或完整回归测试，可在安装副本中执行：
+
+```powershell
+$installedSkill = if ($env:CODEX_HOME) { Join-Path $env:CODEX_HOME 'skills/lyric-driven-code-mv' } else { Join-Path $env:USERPROFILE '.codex/skills/lyric-driven-code-mv' }
+Push-Location $installedSkill
+python -m pip install -r requirements.txt
+node --test
+Pop-Location
+```
+
+安装 skill 不安装视频框架或模型。选择其他框架、安装依赖/字体或使用 API 前先说明。
 
 ## 先跑通 12 秒
 
@@ -270,9 +290,11 @@ node skills/lyric-driven-code-mv/scripts/hud-density.mjs skills/lyric-driven-cod
 python skills/lyric-driven-code-mv/scripts/timeline-sync.py work/beat120.wav --storyboard skills/lyric-driven-code-mv/assets/storyboard-example.json -o work/timeline.png
 python skills/lyric-driven-code-mv/scripts/safe-area.py --video work/demo.mp4 --at 3 10 -o work/safe-check.png
 python skills/lyric-driven-code-mv/scripts/minimal-renderer.py skills/lyric-driven-code-mv/assets/storyboard-example.json --probe 0 120 300
+Push-Location 'skills/lyric-driven-code-mv'
 node --test
+Pop-Location
 ```
 
 测试可使用 `FFMPEG_PATH` / `FFPROBE_PATH` 指向已有程序；PATH 中缺少工具时只跳过需要实际解码/编码的用例，并说明原因。显式配置无效路径会报错。`--strict` 把结构警告升级为失败，通过它仍需核听；草稿交付须附 `music.pendingChecks` 具体时间区间与检查内容。使用说明见 [SKILL.md](skills/lyric-driven-code-mv/SKILL.md)、[时间与分镜](skills/lyric-driven-code-mv/references/storyboard-and-timing.md)、[像素/字幕](skills/lyric-driven-code-mv/references/pixel-game-visuals.md)、[音频/授权](skills/lyric-driven-code-mv/references/audio-and-rights.md)、[依赖/验收](skills/lyric-driven-code-mv/references/dependencies-and-delivery.md)。
 
-长期维护、复现反馈、兼容性、发布与回退流程见 [维护指南](MAINTENANCE.md)。同步图的误差解释与器乐叙事字幕说明见 [同步复核](skills/lyric-driven-code-mv/references/sync-review.md)；音效与拍点的两层关系见 [音效层与卡点](skills/lyric-driven-code-mv/references/sfx-and-beat.md)；装置骨架的字段映射见 [装置模板](skills/lyric-driven-code-mv/references/device-templates.md)；40 条参考作品的复盘与改进依据见 [案例研究](docs/CASE-STUDY-2026-11.md)。
+长期维护、复现反馈、兼容性、发布与回退流程见 [维护指南](MAINTENANCE.md)。四个时间工具的选型、输入/输出与证据边界见 [时间工具选型与同步检查](skills/lyric-driven-code-mv/references/sync-review.md)；音效与拍点的两层关系见 [音效层与卡点](skills/lyric-driven-code-mv/references/sfx-and-beat.md)；装置骨架的字段映射见 [装置模板](skills/lyric-driven-code-mv/references/device-templates.md)；40 条参考作品的复盘与改进依据见 [案例研究](docs/CASE-STUDY-2026-11.md)。

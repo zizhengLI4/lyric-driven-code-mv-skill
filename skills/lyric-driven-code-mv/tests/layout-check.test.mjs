@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-const SCRIPT = fileURLToPath(new URL('../skills/lyric-driven-code-mv/scripts/layout-check.py', import.meta.url));
+const SCRIPT = fileURLToPath(new URL('../scripts/layout-check.py', import.meta.url));
 
 // 找一个能跑的 Python 3；没有就跳过（不让整仓测试因为环境缺 Python 变红）。
 function findPython() {

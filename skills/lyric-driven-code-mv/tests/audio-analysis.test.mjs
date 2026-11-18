@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { mediaToolPath, requireMediaTools } from './media-tools.mjs';
 
-const script = fileURLToPath(new URL('../skills/lyric-driven-code-mv/scripts/analyze-audio.mjs', import.meta.url));
-const { analyzePcm, decodeAudio, parseArgs } = await import(new URL('../skills/lyric-driven-code-mv/scripts/analyze-audio.mjs', import.meta.url));
+const script = fileURLToPath(new URL('../scripts/analyze-audio.mjs', import.meta.url));
+const { analyzePcm, decodeAudio, parseArgs } = await import(new URL('../scripts/analyze-audio.mjs', import.meta.url));
 const sampleRate = 8000;
 
 // These signals have hand-chosen beat positions, rather than expectations computed by the analyzer.

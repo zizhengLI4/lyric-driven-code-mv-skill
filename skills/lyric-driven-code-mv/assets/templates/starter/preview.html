@@ -39,8 +39,8 @@ let playing = false, startClock = 0, current = 0;
 const fontFamily = captionStyle.font ? `"${captionStyle.font}",` : '';
 const secondaryFontFamily = captionStyle.secondaryFont ? `"${captionStyle.secondaryFont}",` : fontFamily;
 function rgba(hex, alpha = 1) { const value = hex.replace('#', ''); const n = Number.parseInt(value, 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${alpha})`; }
-function drawOutlinedText(text, x, y, size, fill, outline, shadow, weight = 700) {
-  ctx.font = `${weight} ${size}px ${fontFamily}"Microsoft YaHei",system-ui,sans-serif`;
+function drawOutlinedText(text, x, y, size, fill, outline, shadow, weight = 700, family = fontFamily) {
+  ctx.font = `${weight} ${size}px ${family}"Microsoft YaHei",system-ui,sans-serif`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.lineJoin = 'miter'; ctx.lineWidth = Math.max(4, Math.round(size * .12)); ctx.strokeStyle = shadow; ctx.strokeText(text, x + 3, y + 5);
   ctx.strokeStyle = outline; ctx.strokeText(text, x, y); ctx.fillStyle = fill; ctx.fillText(text, x, y);
@@ -58,7 +58,7 @@ function drawScenePanel(cue, style) {
   const x = (1920 - width) / 2, y = 1080 - 196;
   drawPixelPanel(x, y, width, panelHeight, style);
   drawOutlinedText(cue.zh, 960, y + 62, primarySize, style.primary.color, style.primary.outline, style.primary.shadow);
-  if (cue.en && style.lines > 1) drawOutlinedText(cue.en, 960, y + 62 + gap, secondarySize, style.secondary.color, style.secondary.outline, style.primary.shadow, 600);
+  if (cue.en && style.lines > 1) drawOutlinedText(cue.en, 960, y + 62 + gap, secondarySize, style.secondary.color, style.secondary.outline, style.primary.shadow, 600, secondaryFontFamily);
 }
 function drawChapterCard(t, style) {
   if (!style.chapter?.show || !timeline?.chapters?.length) return;
@@ -75,12 +75,14 @@ function draw(t) {
   const cue = captions.find(c => t >= c.start && t < c.end);
   if (cue && captionStyle.mode === 'scene-panel') drawScenePanel(cue, captionStyle);
   else if (cue) {
-    ctx.font = '44px "Microsoft YaHei",system-ui,sans-serif'; const zhWidth = ctx.measureText(cue.zh).width;
-    ctx.font = '31px "Microsoft YaHei",system-ui,sans-serif'; const enWidth = ctx.measureText(cue.en).width;
+    const primaryFace = `44px ${fontFamily}"Microsoft YaHei",system-ui,sans-serif`;
+    const secondaryFace = `31px ${secondaryFontFamily}"Microsoft YaHei",system-ui,sans-serif`;
+    ctx.font = primaryFace; const zhWidth = ctx.measureText(cue.zh).width;
+    ctx.font = secondaryFace; const enWidth = ctx.measureText(cue.en).width;
     const width = Math.min(1640, Math.max(zhWidth, enWidth) + 48);
     ctx.fillStyle = 'rgba(19,27,41,.86)'; ctx.fillRect((1920-width)/2, 900, width, 105);
-    ctx.textAlign = 'center'; ctx.fillStyle = '#edf5f4'; ctx.font = '44px "Microsoft YaHei",system-ui,sans-serif'; ctx.fillText(cue.zh, 960, 947);
-    ctx.font = '31px "Microsoft YaHei",system-ui,sans-serif'; ctx.fillText(cue.en, 960, 989);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#edf5f4'; ctx.font = primaryFace; ctx.fillText(cue.zh, 960, 947);
+    ctx.font = secondaryFace; ctx.fillText(cue.en, 960, 989);
   }
   drawChapterCard(t, captionStyle);
   if (notice && t < noticeEnd) {

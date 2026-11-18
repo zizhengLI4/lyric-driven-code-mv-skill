@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, mkdtemp, readFile, writeFile, rename, readdir, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, readFile, writeFile, rename, readdir, rm, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, resolve, join, basename, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -20,6 +20,7 @@ const HELP = `用法：node export.mjs [参数]
   --audio PATH        重定位JSON记录的同一音轨，不能替换为另一首歌
   --frame-time N      导出指定成片秒的世界层单帧，无需FFmpeg
   --frame-out PATH    配合--frame-time的PNG路径（384×216，不含ASS字幕）
+  --overwrite         明确允许覆盖已有 PNG、MP4 或 .assets.json；默认拒绝覆盖
   --width N           最终输出宽度，正偶数（默认1920）
   --height N          最终输出高度，正偶数（默认1080）
   --fps N             1–120 的整数（默认30）
@@ -46,8 +47,8 @@ const HELP = `用法：node export.mjs [参数]
 `;
 
 export function parseArgs(argv) {
-  const c = { out: resolve('paper-boat-demo.mp4'), width: 1920, height: 1080, fps: 30, seed: DEFAULT_SEED, duration: DURATION, storyboard: null, audio: null, provided: [], framesDir: null, resume: false, framesOnly: false, ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg', ffprobe: process.env.FFPROBE_PATH || 'ffprobe', font: process.platform === 'win32' ? 'Microsoft YaHei' : 'sans-serif', preview: false, port: 8765, sfx: false, sfxScript: null, sfxGain: 0.85, help: false };
-  const flags = { '--help': 'help', '--resume': 'resume', '--frames-only': 'framesOnly', '--preview': 'preview', '--sfx': 'sfx' };
+  const c = { out: resolve('paper-boat-demo.mp4'), width: 1920, height: 1080, fps: 30, seed: DEFAULT_SEED, duration: DURATION, storyboard: null, audio: null, provided: [], framesDir: null, resume: false, framesOnly: false, ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg', ffprobe: process.env.FFPROBE_PATH || 'ffprobe', font: process.platform === 'win32' ? 'Microsoft YaHei' : 'sans-serif', preview: false, port: 8765, sfx: false, sfxScript: null, sfxGain: 0.85, overwrite: false, help: false };
+  const flags = { '--help': 'help', '--resume': 'resume', '--frames-only': 'framesOnly', '--preview': 'preview', '--sfx': 'sfx', '--overwrite': 'overwrite' };
   const options = { '--out': 'out', '--storyboard': 'storyboard', '--audio': 'audio', '--frame-time': 'frameTime', '--frame-out': 'frameOut', '--width': 'width', '--height': 'height', '--fps': 'fps', '--seed': 'seed', '--frames-dir': 'framesDir', '--ffmpeg': 'ffmpeg', '--ffprobe': 'ffprobe', '--font': 'font', '--port': 'port', '--sfx-script': 'sfxScript', '--sfx-gain': 'sfxGain' };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -66,7 +67,7 @@ export function parseArgs(argv) {
   if (c.sfx && c.framesOnly && !c.framesDir) throw new Error('--sfx 与 --frames-only 须配 --frames-dir');
   if ((c.resume || c.framesOnly) && !c.framesDir) throw new Error('--resume / --frames-only 须配 --frames-dir');
   if (extname(c.out).toLowerCase() !== '.mp4') throw new Error('--out 须使用 .mp4 扩展名');
-  if (/[,\r\n]/.test(c.font)) throw new Error('字体名称不能含逗号或换行');
+  if (/[,{};<>`"'\\\r\n]/.test(c.font)) throw new Error('字体名称不能含ASS/CSS控制字符');
   if (c.audio && !c.storyboard) throw new Error('--audio须配--storyboard，以明确音轨时基与音乐证据');
   if ((c.frameTime !== undefined) !== Boolean(c.frameOut)) throw new Error('--frame-time须配--frame-out');
   if (c.frameTime !== undefined) {
@@ -146,6 +147,10 @@ export async function loadProject(c) {
 const frameOptions = c => ({ seed: c.seed, ...(c.timeline ? { timeline: c.timeline } : {}) });
 
 export async function exportFrame(c, log = console.log) {
+  const frameExists = await fileTarget(c.frameOut);
+  log(`${frameExists ? '已有单帧目标' : '新建单帧目标'}：${c.frameOut}`);
+  if (frameExists && c.overwrite !== true) throw new Error(`默认拒绝覆盖单帧 PNG：${c.frameOut}。影响：替换会改变此图像文件；如确认，请用 --overwrite 后重试。`);
+  if (frameExists) log(`影响：将替换单帧 PNG ${c.frameOut}；已由 --overwrite 确认。`);
   c = await loadProject(c);
   if (!c.frameOut || !Number.isFinite(c.frameTime) || c.frameTime < 0 || c.frameTime >= c.duration) throw new Error('--frame-time须位于[0,duration)，并提供--frame-out');
   await mkdir(dirname(c.frameOut), { recursive: true });
@@ -275,15 +280,24 @@ export function createASS(c) {
   }
   const size = Math.round(c.height * 0.041), enSize = Math.round(c.height * 0.029), margin = Math.round(c.height * 0.07), x = Math.round(c.width / 2), y = c.height - margin;
   const introSize = Math.round(c.height * 0.025);
+  const font = captionStyle.font || c.font;
   const lines = [
     '[Script Info]', 'Title: 未抵达的灯 · 原创12秒模板', 'ScriptType: v4.00+', `PlayResX: ${c.width}`, `PlayResY: ${c.height}`, 'ScaledBorderAndShadow: yes', 'WrapStyle: 2', '',
     '[V4+ Styles]', 'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    `Style: Caption,${c.font},${size},&H00F4F5ED,&H00FFFFFF,&H90131B29,&H90131B29,0,0,0,0,100,100,0,0,3,${Math.max(4, Math.round(c.height * 0.009))},0,2,${Math.round(c.width * 0.08)},${Math.round(c.width * 0.08)},${margin},1`,
+    `Style: Caption,${font},${size},&H00F4F5ED,&H00FFFFFF,&H90131B29,&H90131B29,0,0,0,0,100,100,0,0,3,${Math.max(4, Math.round(c.height * 0.009))},0,2,${Math.round(c.width * 0.08)},${Math.round(c.width * 0.08)},${margin},1`,
     `Style: Notice,${c.font},${introSize},&H00E5DEC4,&H00FFFFFF,&H90131B29,&H90131B29,0,0,0,0,100,100,0,0,3,${Math.max(3, Math.round(c.height * 0.006))},0,8,${Math.round(c.width * 0.08)},${Math.round(c.width * 0.08)},${Math.round(c.height * 0.06)},1`, '',
     '[Events]', 'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
   ];
   if (timeline.notice) lines.push(`Dialogue: 1,0:00:00.00,${assTime(timeline.noticeEnd)},Notice,,0,0,0,,${assText(timeline.notice)}`);
-  for (const cue of timeline.captions) lines.push(`Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},Caption,,0,0,0,,{\\an2\\pos(${x},${y})}${assText(cue.zh)}${cue.en ? `\\N{\\fs${enSize}}${assText(cue.en)}` : ''}`);
+  // A named style keeps the font family out of the inline ASS override syntax.
+  if (captionStyle.secondaryFont) {
+    const primary = lines.find(line => line.startsWith('Style: Caption,'));
+    lines.splice(lines.indexOf(primary) + 1, 0, primary.replace(`Caption,${font},`, () => `CaptionSecondary,${captionStyle.secondaryFont},`));
+  }
+  for (const cue of timeline.captions) {
+    const secondary = cue.en ? `\\N{${captionStyle.secondaryFont ? '\\rCaptionSecondary' : ''}\\fs${enSize}}${assText(cue.en)}` : '';
+    lines.push(`Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},Caption,,0,0,0,,{\\an2\\pos(${x},${y})}${assText(cue.zh)}${secondary}`);
+  }
   if (c.audioPath && c.audioRecord?.provenance !== 'original' && c.audioRecord?.credit?.trim()) {
     const credit = `音乐：${c.audioRecord.credit}${c.audioRecord.license ? `｜${c.audioRecord.license}` : ''}`;
     lines.push(`Dialogue: 2,${assTime(Math.max(0, c.duration - 4))},${assTime(c.duration)},Notice,,0,0,0,,{\\an8\\pos(${x},${Math.round(c.height * 0.16)})}${assText(credit)}`);
@@ -300,15 +314,27 @@ async function fileTarget(path) {
   catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
 
-/** 两个文件成对更新；失败时还原已备份交付，回滚失败保留备份供恢复。 */
-export async function publishOutput(temporaryOut, out, records, move = rename) {
-  const targets = [out, `${out}.assets.json`];
-  const exists = await Promise.all(targets.map(fileTarget));
-  const staged = await mkdtemp(join(dirname(out), '.mv-publish-'));
-  const backups = targets.map((_, i) => join(staged, `previous-${i}`));
-  const backed = [], installed = [];
-  let preserve = false;
+/** 两个文件成对更新；默认不覆盖已有交付，显式 overwrite 后失败仍可回滚。 */
+export async function publishOutput(temporaryOut, out, records, move = rename, options = {}) {
+  const lockPath = `${out}.publish-lock`;
+  let lockHandle;
   try {
+    lockHandle = await open(lockPath, 'wx');
+  } catch (error) {
+    if (error.code === 'EEXIST') throw new Error(`另一个发布事务正在进行：${out}（publish lock）`, { cause: error });
+    throw error;
+  }
+  try {
+    const targets = [out, `${out}.assets.json`];
+    const exists = await Promise.all(targets.map(fileTarget));
+    if (exists.some(Boolean) && options.overwrite !== true) {
+      throw new Error(`输出已存在，默认拒绝覆盖：${targets.filter((_, i) => exists[i]).join('、')}；如确认覆盖请使用 --overwrite`);
+    }
+    const staged = await mkdtemp(join(dirname(out), '.mv-publish-'));
+    const backups = targets.map((_, i) => join(staged, `previous-${i}`));
+    const backed = [], installed = [];
+    let preserve = false;
+    try {
     const metadata = join(staged, 'assets.json');
     await writeFile(metadata, JSON.stringify(records, null, 2) + '\n');
     for (let i = 0; i < targets.length; i++) if (exists[i]) { await move(targets[i], backups[i]); backed.push(i); }
@@ -323,7 +349,11 @@ export async function publishOutput(temporaryOut, out, records, move = rename) {
       throw new Error(`发布失败：${error.message}；回滚未完成，保留备份 ${staged}：${recoveryErrors.join('；')}`, { cause: error });
     }
     throw error;
-  } finally { if (!preserve) await rm(staged, { recursive: true, force: true }); }
+    } finally { if (!preserve) await rm(staged, { recursive: true, force: true }); }
+  } finally {
+    await lockHandle.close();
+    await rm(lockPath, { force: true });
+  }
 }
 
 function commandOutput(binary, args, label) {
@@ -333,11 +363,11 @@ function commandOutput(binary, args, label) {
 }
 
 export function preflight(c) {
-  const filters = commandOutput(c.ffmpeg, ['-hide_banner', '-filters'], 'ffmpeg');
+  const filters = commandOutput(c.ffmpeg, ['-hide_banner', '-filters'], `ffmpeg (${c.ffmpeg})`);
   if (!/\bass\s+V->V/.test(filters)) throw new Error('ffmpeg 缺少 libass 字幕过滤器；请使用已有完整版本');
-  const encoders = commandOutput(c.ffmpeg, ['-hide_banner', '-encoders'], 'ffmpeg');
+  const encoders = commandOutput(c.ffmpeg, ['-hide_banner', '-encoders'], `ffmpeg (${c.ffmpeg})`);
   if (!/\blibx264\b/.test(encoders) || !/\baac\b/.test(encoders)) throw new Error('ffmpeg 缺少 libx264 或 AAC 编码器');
-  commandOutput(c.ffprobe, ['-version'], 'ffprobe');
+  commandOutput(c.ffprobe, ['-version'], `ffprobe (${c.ffprobe})`);
 }
 
 async function pipeFrames(c, assets, temporaryOut, log) {
@@ -392,12 +422,33 @@ export async function verifyOutput(c, path) {
   return info;
 }
 
+async function assertOutputAvailable(c, log) {
+  if (c.framesDir && !c.resume) {
+    let entries = [];
+    try { entries = await readdir(c.framesDir); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    log(`帧目录目标：${c.framesDir}（非空目录不会覆盖）`);
+    if (entries.length) throw new Error(`拒绝写入非空帧目录：${c.framesDir}。影响：可能覆盖或混入现有帧/用户文件（已有项目：${entries.slice(0, 8).join('、')}${entries.length > 8 ? '…' : ''}）；请使用新目录，或核对原工程后使用 --resume。`);
+  } else if (c.framesDir && c.resume) {
+    log(`帧目录目标：${c.framesDir}；--resume 将校验清单和已有帧，仅复用可信帧并补齐缺失帧。`);
+  }
+  if (c.framesOnly) return;
+  const targets = [c.out, `${c.out}.assets.json`];
+  const exists = await Promise.all(targets.map(fileTarget));
+  for (const [index, target] of targets.entries()) log(`${exists[index] ? '已有目标文件' : '新建目标文件'}：${target}`);
+  if (exists.some(Boolean) && c.overwrite !== true) {
+    throw new Error(`默认拒绝覆盖以上目标：${targets.filter((_, i) => exists[i]).join('、')}。影响：会替换已有 MP4 和/或资产清单；如确认，请用 --overwrite 后重试。`);
+  }
+  if (exists.some(Boolean)) log('影响：若渲染和验收通过，将以新 MP4 和本次资产清单替换上面列出的旧文件；失败时保留旧交付。已由 --overwrite 确认。');
+}
 export async function exportVideo(c, log = console.log) {
+  log(`工具路径：ffmpeg=${c.ffmpeg}；ffprobe=${c.ffprobe}`);
+  if (c.sfx) log(`本地音效模块将以当前 Node 进程权限执行：${c.sfxScript || fileURLToPath(new URL('../../../scripts/sfx.mjs', import.meta.url))}`);
+  await assertOutputAvailable(c, log);
   c = await loadProject(c);
-  if (!c.framesOnly) await Promise.all([c.out, `${c.out}.assets.json`].map(fileTarget));
   preflight(c);
   if (c.audioPath) {
-    const info = JSON.parse(commandOutput(c.ffprobe, ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', c.audioPath], '源音轨ffprobe'));
+    const info = JSON.parse(commandOutput(c.ffprobe, ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', c.audioPath], `源音轨ffprobe (${c.ffprobe})`));
     const audio = info.streams?.find(s => s.codec_type === 'audio');
     const duration = Number(audio?.duration ?? info.format?.duration);
     if (!audio || !Number.isFinite(duration) || duration + 0.02 < c.audioStart + c.duration) throw new Error('源音轨长度不足或没有音频流；请核对时长和sourceOffset');
@@ -419,7 +470,7 @@ export async function exportVideo(c, log = console.log) {
     const info = await verifyOutput(c, temporaryOut);
     if ((await stat(temporaryOut)).size < 1) throw new Error('编码结果为空');
     records.output = { path: c.out, sha256: digest(await readFile(temporaryOut)) };
-    await publishOutput(temporaryOut, c.out, records); temporaryOut = null;
+    await publishOutput(temporaryOut, c.out, records, rename, { overwrite: c.overwrite }); temporaryOut = null;
     log(`完成：${c.out}\n已核对${c.duration}秒、${c.width}×${c.height}、H.264/AAC及全片解码。交付前仍需抽帧查看叙事和字幕。`);
     return info;
   } finally {
@@ -428,9 +479,9 @@ export async function exportVideo(c, log = console.log) {
   }
 }
 
-function preview(c) {
+export function createPreviewServer(c) {
   const files = new Map([['/', ['preview.html', 'text/html; charset=utf-8']], ['/preview.html', ['preview.html', 'text/html; charset=utf-8']], ['/frame.mjs', ['frame.mjs', 'text/javascript; charset=utf-8']], ['/timeline.mjs', ['timeline.mjs', 'text/javascript; charset=utf-8']]]);
-  const server = createServer(async (req, res) => {
+  return createServer(async (req, res) => {
     const path = new URL(req.url, 'http://127.0.0.1').pathname;
     if (path === '/project.json') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ timeline: c.timeline, duration: c.duration, seed: c.seed })); return; }
     const route = files.get(path);
@@ -438,6 +489,10 @@ function preview(c) {
     try { const body = await readFile(join(here, route[0])); res.writeHead(200, { 'Content-Type': route[1], 'Cache-Control': 'no-store' }); res.end(body); }
     catch { res.writeHead(500); res.end('读取失败'); }
   });
+}
+
+function preview(c) {
+  const server = createPreviewServer(c);
   server.on('error', error => { console.error(`预览服务失败：${error.message}`); process.exitCode = 1; });
   server.listen(c.port, '127.0.0.1', () => console.log(`预览：http://127.0.0.1:${c.port} （Ctrl+C停止；不自动打开浏览器）`));
 }

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = resolve(HERE, '..', 'skills', 'lyric-driven-code-mv', 'scripts', 'sync-audit.py');
+const SCRIPT = resolve(HERE, '..', 'scripts', 'sync-audit.py');
 const PYTHON = process.env.PYTHON || 'python';
 
 const run = (args) => spawnSync(PYTHON, [SCRIPT, ...args], { encoding: 'utf8' });

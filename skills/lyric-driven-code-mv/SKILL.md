@@ -1,122 +1,66 @@
 ---
 name: lyric-driven-code-mv
-description: Use when a music video needs code animation that responds to lyric meaning, especially pixel game narratives with characters, quests, recurring motifs, and music timing. 适用于歌词呼应的代码音乐 MV、像素游戏叙事分镜及其实现；单纯频谱动画或普通口播剪辑无需使用。
+description: Use when creating or improving a lyric-driven code music video, pixel-game narrative, interface MV, or song-to-story storyboard—especially requests such as “给这首歌做个 MV”, “歌词视频”, “像素剧情 MV”, or “音乐可视化” with lyrics, characters, story, or code animation, or “按歌词和鼓点检查副歌分镜”. 适用于歌曲背景考据、人物/故事、连续分镜、角色任务、节奏检查，以及画面像 PPT、高潮弱、人物动作异常、模糊或转场僵硬的现有 MV；不适用于单独频谱动画、给采访加逐字字幕、普通口播或仅做字幕剪辑；例如“给纯器乐做频谱动画”不单独触发本 Skill。
 ---
 
 # 歌词驱动代码 MV
 
-把歌曲情绪写成可观看的游戏演出：**歌词决定画什么，音乐决定何时强调。** 用人物的目标、行动、反馈和结果表达含义，进度条、道具和转场服务于这一因果链。
+把歌曲情绪写成可观看的游戏演出：**歌词决定画什么，音乐决定何时强调。** 角色目标、行动、反馈和结果要形成连续因果；进度条、道具、章节牌和转场都服务于这条因果链。
 
-## 从歌曲背景到人物与故事
+## 默认人物与故事入口
 
-新作或重写叙事时，只要人物或剧情有一项未指定，就主动使用当前助手的联网搜索工具，不要求用户先编故事。只指定人物，就保留人物、补剧情；只指定剧情，就保留剧情、补人物。两项都已指定，或只在已有工程上改字幕、混音、导出时，不启动这一步。
+只要人物或剧情至少有一项未指定，新作就主动联网搜索查歌曲背景，不先反问“你想要什么故事”。人物已指定则保留人物、补剧情；剧情已指定则保留剧情、补人物；两者都已指定或只改已有工程的字幕、混音、导出时，不重写叙事。歌名/版本只有在无法辨认且会改变故事时才追问。
 
-1. **认准作品。** 用歌名、词曲作者、演唱者及录音版本交叉检索，再查「歌名 + 创作缘起 / 访谈」和原语言关键词。区分原作背景与翻唱者的演绎；同名作品无法辨认且会改变剧情时再问版本。只搜索公开标识，不上传私人录音或未发行歌词；用户禁止联网时不搜索。
-2. **查到可以引用的事实。** 打开创作者访谈、官方专辑说明或同期报道，不把搜索摘要当来源。在项目制作笔记记录标题、链接、支持的事实和采用它的镜头。没有来源把某段真实经历与作品联系起来，就不把它说成创作动机；歌词里的「我」也不自动等于歌手。
-3. **让背景推动行动。** 先用一句话串起主角的目标、阻碍、选择和结局，再随实际歌曲段落安排可见的行动与后果。默认可以用原创角色转译真实背景，明确区分事实与改编。例如，仅证实创作与迁居有关，可让虚构主角在主歌打包旧物、副歌试着寄回钥匙、尾声决定把钥匙留下。迁居有出处，钥匙是编剧的道具，不是真人轶事。
-4. **接到成片。** 把人物写进 `actors`，把行动和后果写进每镜的 `objective`、`action`、`feedback`、`outcome`，并在对应 `scene.id` 的画法中实际呈现；重复副歌应看见前一次选择造成的变化。继续下面的样片、渲染和验收步骤，按用户要求的时长交付，不停在背景摘要。无法联网或查不到可靠材料时，说明限制，按歌词或器乐情绪创作并标明「原创演绎，非真实经历」。
+查到的创作缘起、作者/演唱者经历和歌词只作为证据与灵感，不把歌手生平直接当角色经历。先根据歌曲背景、歌词意象和用户给的形象约束，先生成主角外观卡；再构思阻碍、配角和世界规则，最后把目标、行动、反馈和结果写成故事。事实、推断、创作分开记录。联网失败或找不到可靠材料时，明确说明并标为原创演绎。具体规则见[歌曲考据与故事转译](references/song-research-and-story.md)和[主角外观卡与衣装连续性](references/character-design.md)。
 
-## 工作流程
+## 参考入口
 
-**先做依赖预检。** Pillow 只被 `scripts/` 下 5 个 Python 脚本使用，声明在仓库根 `requirements.txt`：
+只打开当前问题需要的 reference；参数、容差、退出码和字段细节以 reference 为唯一依据。
 
-```sh
-python -c "import PIL" 2>/dev/null || python -m pip install pillow
-```
+- **歌曲与叙事：**[歌曲考据与故事转译](references/song-research-and-story.md)、[主角外观卡与衣装连续性](references/character-design.md)、[装置与章节](references/story-devices.md)、[装置模板](references/device-templates.md)、[时间与分镜](references/storyboard-and-timing.md)、[HUD 与字幕](references/hud-and-subtitles.md)。
+- **视觉与参考片：**[像素世界与演出](references/pixel-game-visuals.md)、[参考片分析](references/reference-film-analysis.md)。
+- **节奏与质量检查：**[时间工具选型与同步检查](references/sync-review.md)、[音效与卡点](references/sfx-and-beat.md)、[渲染故障预防](references/render-pitfalls.md)。
+- **制作与交付：**[音频与授权](references/audio-and-rights.md)、[依赖与交付](references/dependencies-and-delivery.md)。
 
-Windows PowerShell 用 `python -c "import PIL"; if ($LASTEXITCODE -ne 0) { python -m pip install pillow }`。
+## 核心三步与最小可用子集
 
-Node 侧零第三方包：`scripts/`、`assets/scenes/`、`assets/templates/starter/` 下的 `.mjs` 只 import `node:` 内置模块，skill 目录内没有 `package.json`，**不需要 `npm install`，离线可用**——`validate-storyboard.mjs`、`hud-density.mjs` 同样如此。FFmpeg/FFprobe 是系统二进制，按第 4 步核对。
+最小核心先分两种情况：**没有真实音频**时，只跑分镜结构校验和可读变化密度，能离线完成，不声称音画同步；**有真实音频**时，再增加音频分析与出片前时间核对。Pillow、FFmpeg、接触表、同步图、布局检查和渲染器都按当前问题按需调用，不是每次都必跑。
 
-1. **固定输入与证据。** 确认歌曲文件及版本、校对歌词、截取范围、画幅、人物设定和交付范围。自己找歌时先读 [音频与授权](references/audio-and-rights.md)，核对作品及录音的使用条件。分析参考片时分别记录可见事实、音频核对结果和实现推断；只有完成全时段检查才称“看完整片”。作者工具无源码或声明证据时标为未知。
-2. **建立两条时间线。** 标注句起止、段落、重要重音和留白；语义表记录人物关系、意象和动作。读 [时间与分镜](references/storyboard-and-timing.md)，统一成片坐标与原曲偏移。器乐配原创叙事字幕时说明文案角色，不当作演唱转录。已有 FFmpeg 时先用 `scripts/analyze-audio.mjs` 生成离线能量、停顿、起音和 BPM/相位候选；需要同轴检查镜头和字幕时读 [同步候选图](references/sync-review.md)。不把候选当歌词对齐，无法试听也可完成透明标注的草稿。
-3. **先选装置，再选场景。** 先确定聊天、游戏系统、时间轴、计数器、章节牌、视角或材质舞台，再为每镜写目标→行动→反馈→结果。用 `chapters[]` 记录标题牌、关系阶段和结算；用 `scene.hud[]` 表达数值、状态、归零、损坏或失败的情绪反馈；同构图换季节、材质或年代时写 `materialVariant`。镜长由信息密度决定，不设固定上限；建议每 8–12 秒至少有一次可读变化，长镜头也可用于等待和留白。参考 [装置与章节](references/story-devices.md) 和 [HUD 与字幕](references/hud-and-subtitles.md)；要现成骨架时从 [装置模板](references/device-templates.md) 的五个 JSON（私信、读档、清单、结算、双轴滑块）里挑一个改写，别从空白开始。反复意象安排首次出现、变化和再出现；重复副歌增加信息或后果。保留人物身份、装束和道具来龙去脉。像素美术、摄像机、字幕和双人叙事读 [像素世界与演出](references/pixel-game-visuals.md)。
-4. **选择一种实现路线。** 沿用用户指定框架及现有工程。无框架且需要最小可运行工程时，复制 `assets/templates/starter/`：仅 Node 内置模块与 FFmpeg 即可预览和导出。HTML 动效工程可采用 HyperFrames，React 工程优先 Remotion。实现前读 [依赖与交付](references/dependencies-and-delivery.md)，列出必需项、已有项和可选项；安装包、下载浏览器/模型/字体、使用 API 或付费服务前先说明并沿用已有授权。
-5. **完成代表片段。** 新作品先完成约 10–15 秒，包含人物动作、歌词意象任务、反馈变化及转场；用户指定其他长度或修改已有工程时按其范围。分镜 JSON 作为时长、歌词、场景边界、转场及音乐状态的真源，代码按 `scene.id` 提供画法。每帧由时间直接求值，粒子固定种子。出口转场占前镜尾段，下一镜固定 `local=0` 预卷，不增加总时长。执行结构校验和 `scripts/qa.mjs` 的重复、逆序、乱序像素比较。
-6. **扩展与验收。** 先预览代表片段，核对动作峰值、句尾、转场、歌词面板与摄像机边缘，再扩展已授权范围。参考像素歌词视频时，在分镜顶层使用 `captionStyle.mode:"scene-panel"`，让浏览器预览、ASS 导出和章节牌保持同一套暖白/描边/像素面板参数；不提供时保留普通底部字幕兼容旧稿。导出后执行 FFprobe、完整解码、接触表和关键帧检查；具备播放条件时完整播放，逐项记录真实完成的检查。不能试听时交付 `draft`，明确待核对落点，不能声称音画已核对。
+### 1. 固定输入与证据
 
-## 音乐证据与交付阶段
+确认歌曲/录音版本、歌词或器乐说明、截取范围、画幅、人物设定、交付范围和授权限制。人物或剧情缺失时先完成歌曲考据；有音频就分析实际片段，所有时间统一使用成片秒。机器分析只是候选，不自动代表已核听。
 
-| `music.status` | 条件 | 交付义务 |
-|---|---|---|
-| `illustrative` | 自编时点、占位音轨或原创演示 | 开头显示“演示时点”，记录 `presentationNotice:true`；说明不是对应真实歌曲的对齐结果 |
-| `draft` | 已有音频，机器分析或未经试听的标注 | `evidence.method` 写推定方法，`limitations` 写误差来源；`pendingChecks[]` 记录具体时间区间与未确认内容，允许交付草稿成片 |
-| `verified` | 人工核对了相关音频、歌词与关键落点 | 记录 `evidence.reviewer`、含时区完整时间戳 `reviewedAt`（如 `2026-11-17T08:00:00Z`），交付说明写核对范围 |
+### 2. 做连续分镜与代表片段
 
-自动分析不能升级为 `verified`。逐字时点按句长均分时，字幕说明为视觉填充；BPM 的半速/双速歧义、伴奏起音、拖音及源偏移均可能造成误差。缺少音频时先交付 `illustrative` 分镜或演示，不因无法试听无限等待。状态与授权是两项独立条件，草稿状态不能代替发布许可。
+先生成主角外观卡和一张目标像素尺寸的角色/剪影验收帧；再构思阻碍、配角和世界规则，按歌曲段落建立“目标 → 行动 → 反馈 → 结果”。保持人物、道具、位置和 HUD 跨镜连续；无歌词副歌/间奏也要沿故事线推进，不只保持静止空镜。先做约 10–15 秒代表片段，沿用用户已有框架；无工程时使用内置 starter。分镜 JSON 是时长、字幕、镜头边界、转场和音乐状态的真源。
 
-## 画法规范
+### 3. 验收后扩展
 
-像素场景按“背景 → 装饰/光晕 → 主体 → 前景遮挡”的顺序绘制。装饰必须先于主体落笔，避免光晕、反光或粒子盖住主体轮廓；在 starter 的 `FB` 中用 `fb.layer({ glow: layer => ..., subject: layer => ... })` 固定该顺序，`fb.glow(x, y, radius, color)` 只绘制底层光晕。画面构图应检查主体占比、整体亮度和单色面积；`scripts/qa.mjs` 会对可分析帧提示主体估算占比低于 0.5%、平均亮度低于 30/255 或单一颜色超过 60%。这些是筛查提示，不能替代抽帧审片。
+先跑环境预检、分镜结构检查、变化密度检查和与音频相关的时间检查，再预览代表片段。核对动作峰值、句尾、转场、字幕安全区、画面边缘和去字幕后的叙事；导出后用 FFprobe、完整解码、接触表和关键帧复核。代表片段通过后才扩展到用户授权的范围。
 
-例如霓虹招牌镜头先铺夜景，再画光晕与招牌主体，最后加前景遮挡。`layer` 的两个回调都会收到同一个 `FB` 实例，先执行 `glow`，再执行 `subject`：
+## 环境与失败路由
 
-```js
-fb.rect(0, 0, 384, 216, nightSky); // 背景
-fb.layer({
-  glow: layer => layer.glow(258, 72, 32, [255, 62, 164], { alpha: 0.65 }),
-  subject: layer => {
-    layer.rect(231, 52, 54, 38, [28, 26, 42]); // 招牌底板
-    layer.rect(237, 59, 42, 4, [255, 110, 194]); // 招牌字形
-    layer.rect(250, 92, 16, 42, coat); // 主体人物
-  },
-});
-fb.rect(0, 190, 384, 26, foreground); // 前景遮挡
-```
+在 skill 根目录运行 `python scripts/check_environment.py`；它只诊断，不安装软件。`ready` 才表示完整链路可用；`partial` 仍可继续不依赖缺项的分镜与 Node 校验；`needs_setup` 先处理 Node.js 等核心缺项。平台准备、Pillow 安装和缺 FFmpeg/FFprobe 时的处理见[依赖与交付](references/dependencies-and-delivery.md)。安装包、字体、浏览器、模型、API 或付费服务前先说明，不擅自下载或注册。
 
-## 模板与命令
+## 最小命令
 
-复制 [原创 12 秒分镜](assets/storyboard-example.json) 并替换内容。最小工程见 [starter 说明](assets/templates/starter/README.md)，自带纸船、两岸灯光、尾段转场、高分辨率字幕及本地生成的原创节奏。`export.mjs --storyboard` 读取分镜配置；真实歌曲先更新 `project.audio` 与证据，`--audio` 只能重定位同一素材，按 `scene.id` 调整或注册画法。导出保存实际音轨哈希及来源记录，外部音轨有 `credit` 时生成片尾短署名，发布前仍核对完整署名义务。字幕与音乐状态提示由 JSON 生成。
-
-以下在 skill 目录运行；其他目录使用脚本的绝对路径：
+以下命令在 skill 根目录运行；更完整的参数和排障命令见对应 reference：
 
 ```sh
-node scripts/analyze-audio.mjs path/to/song.wav --start 37.2 --duration 12 --out work/audio-analysis.json
-node scripts/validate-storyboard.mjs assets/storyboard-example.json
-node scripts/validate-storyboard.mjs path/to/storyboard.json --delivery
-node scripts/visualize-sync.mjs path/to/storyboard.json work/audio-analysis.json --out work/sync-review.svg
-node scripts/qa.mjs assets/templates/starter/frame.mjs --duration 12 --fps 30 --storyboard assets/storyboard-example.json --out work/qa.json
-node scripts/verify-sfx.mjs --audio work/mixed.wav --storyboard work/storyboard.json --window-ms 50 --out work/sfx-evidence.json
-node scripts/lrc.mjs --lrc work/song.lrc --offset 12 --storyboard work/storyboard.json --out work/lyrics.json
-node scripts/new-storyboard.mjs --preset narrative-12 --duration 90 --lyrics work/lyrics.json --out work/storyboard.json
-node assets/templates/starter/export.mjs --storyboard assets/storyboard-example.json --out work/demo.mp4
-node assets/templates/starter/export.mjs --frame-time 5.55 --frame-out work/world-frame.png
-node assets/templates/starter/export.mjs --storyboard path/to/storyboard.json --audio path/to/song.wav --out work/mv.mp4
+python scripts/check_environment.py
+node scripts/validate-storyboard.mjs path/to/storyboard.json
+node scripts/hud-density.mjs path/to/storyboard.json --strict
 ```
 
-量节奏、看音画、查安全区、做点阵标题牌：
+没有真实音频时，校验结果只证明结构和可读变化，不证明音画同步；有真实音频时再按同步参考运行出片前时间总闸。需要渲染或交付时按依赖与交付参考执行。
 
-```sh
-node scripts/hud-density.mjs path/to/storyboard.json --max-gap 12        # 可读变化密度与空白窗
-python scripts/sync-audit.py path/to/storyboard.json \
-  --analysis work/audio-analysis.json --video work/mv.mp4               # 出片前一条命令查全部时间问题
-python scripts/layout-check.py path/to/storyboard.json \
-  --hud "档案:56,44,596,200" --hud "神选度:1256,44,1794,200" \
-  --log "56,700,640,880" --subtitle-band "360,930,1560,1020" \
-  --safe "right=124,bottom=92" --scenes "s09-ledger:full-ui"
-python scripts/timeline-sync.py song.wav --storyboard storyboard.json -o work/timeline.png
-python scripts/safe-area.py --video work/mv.mp4 --at 3 10 -o work/check.png
-python scripts/film-sheet.py shots/<片名> -o sheet.jpg --cols 3
-python scripts/pixel-font.py --sample work/title-sample.png
-python scripts/minimal-renderer.py path/to/storyboard.json --probe 0 120 300
-node scripts/sfx.mjs --from-storyboard path/to/storyboard.json --out work/sfx.wav --report work/sfx-report.json
-node scripts/sfx.mjs --list
-node assets/templates/starter/export.mjs --storyboard path/to/storyboard.json --audio path/to/song.wav --sfx --out work/mv.mp4
-```
+## 交付边界
 
-`scripts/lrc.mjs` 把 LRC 时点按 `--offset` 秒加到片段时钟，逐行推算 `end`；提供 `--storyboard` 时会为跨镜歌词补 `allowSceneSplit` 与原因。`scripts/new-storyboard.mjs` 生成 12 镜待填写骨架，歌词可从 JSON 直接导入。12 个画法资产位于 [assets/scenes](assets/scenes/README.md)，每个工厂都可配置主体取景位置、调色板和镜头时长。`--sfx-script PATH` 可让复制出去的 starter 使用自定义音效模块，不需要改源码；`project.draftMark:false` 可隐藏 draft 提示，状态仍会写进导出资产清单。
-
-`hud-density.mjs` 把切镜、材质、HUD、事件、音效、字幕六类变化摊到时间轴上，报最长空白窗与单镜内部空窗；`--strict` 时有空窗即非零退出。`sync-audit.py` 是**出片前的总闸**，一条命令核对五类时间问题：分镜网格与分析网格是否同一个 BPM、切点是否落在拍点、`sync:"beat"` 的场景事件是否落在拍点、歌词是否落在强起音、chapters 与 sections 边界是否同界且都在切点上；给 `--video` 时再实测成片里字幕距画布底/右的真实像素。**必须传 `--analysis`**：只看「切点 vs 分镜网格」会得到 0ms 的完美结论，因为切点就是从那个网格上吸附来的——网格本身错了，切点再齐也没用（旧分镜的 evidence 写着「98.8，144.1 为另一强候选未采纳」，正是这种自证循环）。没有 `--analysis` 时歌词只按拍点提示，判据更弱，同样不判错。**歌词与强起音的偏差也只提示、不判错**：起音检测找的是能量瞬变（鼓点、爆破音、辅音起头），人声用连音长句起唱时平滑进来，没有瞬变可寻，那种「不在强起音上」是检测器的盲区而不是对位错误——实测某片 13 行里 9 行与最近强起音差 100–800ms，但成片音轨与 LRC 起点的相位差只有 1.2ms，错的是判据不是时间轴；LRC 是人手标注，在这件事上比启发式检测可信，所以偏出容差的行只列候选（含反方向候选），交给人耳定夺。`timeline-sync.py` 从音轨取能量包络并估拍点，与切镜、字幕画进同一张图，标 `speculative` 的 BPM 只能用来发现整段踩错，不能据此宣称同步；`--align beats` 优先用分镜自带的 `music.beats` 当参考点，没有才退回自己估的拍点。`safe-area.py` 叠平台安全区（顶部、底部 8.5%、右侧 6.5%、4:3、9:16），字幕底边与 HUD 都要躲开，1080p 的底边下限是 92 px。`layout-check.py` 按成片像素查 HUD 之间、HUD 与字幕带之间的重叠，以及越出安全区的矩形；矩形写作 `名称:x,y,x1,y1`（左上角 + 右下角，都是绝对像素，不是宽高），`--subtitle-band` 传含底条与描边的最外层矩形；`--scenes "s09-ledger:full-ui"` 这样的整屏场景可豁免该场 HUD 检查，字幕带仍受安全区约束。`minimal-renderer.py` 是**占位与版式校验用**的最小渲染器（标题牌 + 数值 HUD + 双语字幕），**不含场景绘制，不作为成片渲染器**；要画面完成度就走 starter 或用户自己的工程。`sfx.mjs` 合成八种音效（tick/type/click/whoosh/confirm/error/riser/chime），长度严格等于 `project.duration`，供混音使用；两层对齐关系见 [音效层与卡点](references/sfx-and-beat.md)——**画面踩拍点，音效跟画面同帧，音效不踩拍**。
-
-校验器保留 `validateStoryboard(data) → errors[]`，提供 `analyzeStoryboard(data,{beatToleranceMs,delivery}) → {errors,warnings}`。普通提示不改变退出码；`--strict` 只是将结构检查中的警告视为失败，通过不证明可发布或 `verified`。`--delivery` 检查许可记录、音乐证据及草稿待核对清单，字段规则见时间与分镜参考。跨镜歌词、显式踩拍事件、HUD 支撑、装置/章节覆盖及授权缺项都有可定位的提示；工具不证明语义正确、许可有效或实际音画同步。
+`illustrative`、`draft`、`verified` 的条件和必需记录见[时间与分镜](references/storyboard-and-timing.md)。机器分析不能升级为 `verified`；不能试听时交付 `draft`，写清 `pendingChecks`。状态与授权是两件事，技术检查通过不等于可公开发布。
 
 ## 完成标准
 
-- 去掉字幕，动作仍能说明段落含义；HUD 变化可追溯到行动，道具先获得再使用。
-- 重复段落有发展，等待、失败、完成及留白与歌曲情绪相称。
-- 同帧重复和乱序求值一致，首尾、每镜及转场没有状态漂移；摄像机移动不露黑，字幕清晰。
-- 字幕底边与 HUD 都在平台安全区内：用 `safe-area.py` 叠一帧确认，别只看成片。
-- `hud-density.mjs` 报出的最长空窗不超过 12 秒；超过就先补变化，别加镜头。
-- 音效落在画面事件上（不是拍点上），`project.sfx[]`/`scene.sfx[]` 通过校验，混音后峰值不削顶。
-- 成片音视频流、时长、画幅和帧率正确；音乐证据状态及实际检查范围写清楚。
-- 交付可编辑源文件、分镜与分析数据、资源来源/许可/署名、所选依赖锁文件（使用依赖时）、成片和简短验收记录。仅请求报告、分镜或草稿时交付对应阶段，不擅自扩展整曲。
+- 去掉字幕后，动作仍能说明段落含义；重复段落有发展，人物、道具和规则不跳变。
+- 分镜与画法可重复求值；代表片段的关键动作、转场、字幕和安全区经抽帧确认。
+- 成片音视频流、时长、画幅和帧率符合目标；交付可编辑源文件、分镜/分析数据、资源许可记录、成片和实际验收记录。
+- 仅请求报告、分镜或草稿时交付对应阶段，不擅自扩展整曲。

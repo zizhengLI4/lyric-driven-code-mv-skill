@@ -48,4 +48,4 @@ except (BrokenPipeError, OSError):
 
 FFmpeg 命令相应地用 `-v error` 限制 stderr 体积，避免管道写满阻塞。加 `stderr=subprocess.DEVNULL` 或写完再 `stdin.close()` 只处理正常收尾，不覆盖「子进程早退」这一种。渲染前的两条 `assert` 价值最高：参数写错时在第一帧就报出来，不用等渲染完几千帧。
 
-长片优先落盘：直出中断要整片重来，`--frames-dir` 配 `--resume` 只补缺失帧，产线取舍见 [依赖与交付](dependencies-and-delivery.md) 的产线表。
+长片优先落盘：直出中断要整片重来，`--frames-dir` 配 `--resume` 只补缺失帧；产线取舍见主文档“依赖与交付”参考入口的产线表。

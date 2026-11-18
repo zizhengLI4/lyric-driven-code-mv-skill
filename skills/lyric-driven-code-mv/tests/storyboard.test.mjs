@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import * as storyboardValidator from '../skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs';
+import * as storyboardValidator from '../scripts/validate-storyboard.mjs';
 
 const { validateStoryboard } = storyboardValidator;
 const analyzeStoryboard = (...args) => {
@@ -13,7 +13,7 @@ const analyzeStoryboard = (...args) => {
   return storyboardValidator.analyzeStoryboard(...args);
 };
 
-const script = fileURLToPath(new URL('../skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs', import.meta.url));
+const script = fileURLToPath(new URL('../scripts/validate-storyboard.mjs', import.meta.url));
 
 function validStoryboard() {
   const scene = (id, start, end, lyricIds, actor) => ({
@@ -1019,7 +1019,7 @@ test('rejects malformed device collections while keeping the single-device diagn
 // 需要多镜的测试自己从第一镜派生 fixture，不反过来要求示例保住第二个镜。
 test('the shipped example carries a 24-second main shot whose readability comes from three changes', () => {
   const example = JSON.parse(readFileSync(
-    new URL('../skills/lyric-driven-code-mv/assets/storyboard-example.json', import.meta.url), 'utf8',
+    new URL('../assets/storyboard-example.json', import.meta.url), 'utf8',
   ));
   for (const key of ['project', 'music', 'lyrics', 'scenes', 'chapters', 'actors', 'props', 'device']) {
     assert.ok(example[key] !== undefined, `示例必须保留必填字段 ${key}`);

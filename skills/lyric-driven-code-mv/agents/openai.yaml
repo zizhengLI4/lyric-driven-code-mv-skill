@@ -1,4 +1,4 @@
 interface:
   display_name: "歌词驱动代码 MV"
-  short_description: "将歌词意象写成角色任务与音乐时间线，制作可复用的像素游戏代码音乐视频"
-  default_prompt: "使用 $lyric-driven-code-mv，根据我提供的歌曲制作 MV。人物或剧情未指定时主动联网查证歌曲背景，只补缺失设定，把故事落实到分镜与画面；先做代表片段，再按要求的范围交付。"
+  short_description: "歌曲背景考据、人物故事、像素剧情 MV 与连续分镜制作"
+  default_prompt: "使用 $lyric-driven-code-mv：给我这首歌制作歌词/像素剧情 MV；若人物或剧情未指定，先联网查证歌曲背景，只补缺失设定，把目标→行动→反馈→结果落实到连续分镜与画面，先做代表片段再按范围交付。"

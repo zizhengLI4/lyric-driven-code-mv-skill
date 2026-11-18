@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { buildSyncReport, renderSyncSVG, writeSyncReport, parseArgs } from '../skills/lyric-driven-code-mv/scripts/visualize-sync.mjs';
+import { buildSyncReport, renderSyncSVG, writeSyncReport, parseArgs } from '../scripts/visualize-sync.mjs';
 
 const fixture = () => ({
   storyboard: { schemaVersion: 1, timebase: 'clip', project: { duration: 4, sourceOffset: 37.2 }, music: { status: 'draft', captionRole: 'narration' }, scenes: [{ id: 'first', start: 0, end: 2.1 }, { id: 'second', start: 2.1, end: 4 }], lyrics: [{ id: 'line', start: 1.3, end: 3, text: '原创叙事字幕 <灯> & "雪"' }] },
@@ -93,7 +93,7 @@ test('CLI写SVG及相邻JSON，源输入哈希可追溯且不覆盖输入', asyn
     assert.equal(saved.sceneStarts[1].deltaSeconds, 0.1);
     await assert.rejects(writeSyncReport({ storyboard: sb, analysis: an, out: join(dir, 'storyboard.svg') }), /覆盖/);
     assert.deepEqual(readFileSync(sb), sources[0]); assert.deepEqual(readFileSync(an), sources[1]);
-    const cli = fileURLToPath(new URL('../skills/lyric-driven-code-mv/scripts/visualize-sync.mjs', import.meta.url));
+    const cli = fileURLToPath(new URL('../scripts/visualize-sync.mjs', import.meta.url));
     const result = spawnSync(process.execPath, [cli, sb, an, '--out', join(dir, 'cli.svg')], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     assert.ok(readFileSync(join(dir, 'cli.svg'), 'utf8').startsWith('<svg'));
