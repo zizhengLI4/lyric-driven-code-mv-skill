@@ -10,6 +10,8 @@
 
 一句关于“远方”的歌词，可以变成人物隔岸送出一盏灯；一段等待，可以写成纸船缓慢漂流、另一岸始终未亮的灯光；当歌曲的情绪发生变化，人物行动、道具状态和场景也随之推进。歌词中的意象有了具体的动作，重复的副歌可以带来新的回应，同一段音乐也就有了不同的故事进展。
 
+**快速入口：**[适用范围](#适合做怎样的作品) · [交给 AI 使用](#把歌曲和技能一起交给-ai) · [安装](#安装) · [12 秒示例](#先跑通-12-秒) · [音乐卡点](#音乐卡点从拍点到校验) · [完整制作指南](GETTING-STARTED.md)
+
 ## 它可以帮你的 AI 做什么
 
 | 环节 | AI 可以按这个技能完成的工作 |
@@ -32,6 +34,21 @@
 - **可编辑的代码动画工程**：把镜头、动作和字幕保留在源文件里，方便换歌、改色、改人物、调整节奏和反复导出。
 
 你可以直接给出喜欢的主题，例如“夜晚、两岸、纸船、暖色灯光”，也可以只确定歌曲与画幅，让 AI 先提出分镜。已有角色设定、画风或代码工程时，将它们一起交给 AI，技能会围绕你的选择组织后续制作。
+
+### 角色辨识度与画面质感
+
+角色好看不只靠配色和装饰；观众应当在缩小、去色或切回群像后仍认得出是谁。这个 Skill 会先把角色当作造型系统设计，再进入场景和动画：
+
+1. 给每位主角建立角色卡，记录叙事功能、头部/发型、身形比例、服装轮廓、常用姿态、材质、识别物和持物位置。
+2. 把角色缩到同一尺度并做纯黑剪影测试。去掉姓名、颜色和手持小物后，每人仍应至少凭头部/服装轮廓、身形/重心、姿态三类中的两类与其他人区分。
+3. 在成片里最小的群像尺寸复查；较大的近景另备细节素材，不把小精灵直接放大充当特写。
+4. 质感按大形、色块、材质光影、少量识别细节逐层增加。统一像素尺度和光源方向，用褶皱、发束和克制反光表现材质；噪点、模糊和堆配件不能替代造型。
+
+参考视频可借鉴“剪影清楚、姿态有性格、细节受控”等原则，不照搬具体角色设计。完整规范见 [像素世界与演出](skills/lyric-driven-code-mv/references/pixel-game-visuals.md#角色差异度与完成度门槛)。
+
+### 适用边界
+
+本项目面向**歌词驱动的角色/场景叙事和代码动画 MV**。如果只需要逐句显示歌词、K 歌字幕或纯文字卡点，不需要角色行动和故事画面，请改用更适合歌词字幕、素材蒙太奇和纯文字音乐短片的 `music-to-video` Skill。
 
 ## 把歌曲和技能一起交给 AI
 
@@ -77,6 +94,8 @@
 
 之后你可以继续对 AI 说“让人物在第二句时停下来”“把岸边灯光改成暖黄色”“让最后一次副歌增加一次回应”，让修改落实到具体镜头和代码中。仅需要分镜、短片段或调整已有工程时，也可以直接限定交付范围。
 
+技术工具不会替你取得歌曲、录音、歌词或参考素材的使用许可；发布前请按素材实际许可确认可用范围及署名要求。提供未发行或私人音频前，请确认所用 AI/工具如何处理文件；仓库内置的本地脚本不会自动上传。
+
 ## 内置工具与原创模板
 
 仓库内置一套 **12 秒纸船与两岸灯光演示**，包含人物动作、场景变化、摄像机留边、尾段转场、高分辨率字幕和本地生成的原创节奏。可以先把这个工程跑通，再让 AI 按你的歌曲与分镜改写。
@@ -86,10 +105,10 @@
 - **确定性 QA**：预热后重复、逆序和乱序求值同一批帧，单独记录首次光栅差异；适配器可提供清理钩子，让浏览器等资源在检查后正常退出。
 - **同步候选图**：把能量、候选拍点、镜头边界和字幕区间放在同一时间轴，输出SVG与JSON并报告起点误差，帮助定位需要试听核对的位置。
 - **卡点校验**：标了 `event.sync:"beat"` 的动作会被拿去和 `music.beats` 网格比对，偏离超过 `beatToleranceMs`（默认 80 ms）就报警告，`--strict` 下直接失败。完整链路见 [音乐卡点：从拍点到校验](#音乐卡点从拍点到校验)。
-- **可读变化密度**：`hud-density.mjs` 把切镜、材质、HUD、事件、字幕五类变化摊到时间轴，报最长空白窗与单镜内部空窗——"每 8–12 秒一次可读变化"那条规则的量尺。
+- **可读变化密度**：`hud-density.mjs` 统计切镜、材质、HUD、事件、音效、歌词句头和章节牌七类时间点，报告最长空白窗与单镜内部空窗；同一时刻的多项变化只算一个点。它帮助检查变化密度，不代替对动作是否易读的人工审片。
 - **平台安全区**：`safe-area.py` 在帧或视频上叠顶部、底部 8.5%、右侧 6.5%、4:3 与 9:16 五条参考线，字幕底边与 HUD 关键读数必须躲开；它在开发中抓出过双语字幕压底、HUD 压顶两个真问题。
 - **点阵标题牌**：`pixel-font.py` 把数字与字母烘成 6×8 点阵（图集 PNG + 点阵 JSON），中文仍用系统字体，混排接近参考片的标题牌质感。
-- **最小渲染器**：`minimal-renderer.py` 只依赖 Pillow 与 FFmpeg，不装 starter 也能把分镜渲成带标题牌、数值 HUD 与双语字幕的无声片，用来快速验证排布。
+- **最小渲染器**：`minimal-renderer.py` 用 Pillow 与 FFmpeg 生成占位画面，检查标题牌、数值 HUD、字幕和版面位置；它不绘制完整场景，不是成片渲染器。正式画面请使用 starter 或现有视频工程。
 - **装置模板库**：`assets/devices/` 五个可直接粘的骨架（私信、读档、清单、结算、双轴滑块），各带三条外壳规则、`scene.hud[]` 与 4–5 个带数值事件；字段映射见 [装置模板](skills/lyric-driven-code-mv/references/device-templates.md)。
 - **音效合成**：`scripts/sfx.mjs` 用振荡器与确定性噪声合成八种音效（tick / type / click / whoosh / confirm / error / riser / chime），长度严格等于 `project.duration`，首尾自动淡入淡出；`project.sfx[]` 与 `scene.sfx[]` 由校验器检查类型、时间与增益。两层对齐关系见 [音效层与卡点](skills/lyric-driven-code-mv/references/sfx-and-beat.md)。
 - **音轨追踪与单帧检查**：音频重定位核对同一素材，导出保存实际音轨哈希与署名记录；可先导出某个时点的世界层PNG，再检查正式成片字幕。
@@ -162,12 +181,12 @@ node skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs --strict work/s
 上面那两条事件的实测结果：
 
 ```text
-普通模式：警告：scenes[0].events[4].at: sync:"beat" 偏离最近节拍 5.5 秒：offsetMs=130；容差 80 ms
-         分镜校验通过。                                  退出码 0
-strict：  严格检查未通过：仍有 1 条警告。                  退出码 1
+普通模式：警告：scenes[0].events[1].at: sync:"beat" 最近节拍=5500ms，偏差 offsetMs=130；容差 80ms
+         分镜校验通过。                                    退出码 0
+strict：  严格检查未通过：仍有 1 条警告。                    退出码 1
 ```
 
-偏 0.5 ms 的那条不报警，偏 130 ms 的这条被抓出来。容差由 `project.settings.beatToleranceMs` 控制，默认 80 ms。
+偏 0.5 ms 的那条不报警，偏 130 ms 的这条被抓出来。容差由 `project.settings.beatToleranceMs` 控制，默认 80 ms。校验器用毫秒报告偏差；负值表示提前，正值表示滞后。以下只摘录关键字段，具体提示文字以当前命令输出为准。
 
 **④ 画出来看整段有没有系统性错位**
 
@@ -226,7 +245,14 @@ ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=input
 
 ## 安装
 
-复制整个 `skills/lyric-driven-code-mv` 目录到 Codex 的 skills 目录，模板与脚本都随安装保留。Windows 可用：
+从仓库根目录获取本项目；若尚未克隆：
+
+```powershell
+git clone https://github.com/zizhengLI4/lyric-driven-code-mv-skill.git
+cd lyric-driven-code-mv-skill
+```
+
+复制整个 `skills/lyric-driven-code-mv` 目录到 Codex 的 skills 目录，模板、脚本和参考文档都随安装保留；不要只复制 `SKILL.md`。Windows 可用：
 
 ```powershell
 $taskSkillRoot = if ($env:CODEX_HOME) { Join-Path $env:CODEX_HOME 'skills' } else { Join-Path $env:USERPROFILE '.codex/skills' }
@@ -236,7 +262,13 @@ if (Test-Path -LiteralPath $taskSkillTarget) { throw '同名 skill 已存在，�
 Copy-Item -LiteralPath './skills/lyric-driven-code-mv' -Destination $taskSkillTarget -Recurse
 ```
 
-安装 skill 不安装视频框架或模型。最小模板只用已有 Node、FFmpeg、FFprobe；选择其他框架、安装依赖/字体或使用 API 前先说明。
+安装 skill 不会安装视频框架、模型或 API。最小 starter 需要已有 Node.js、FFmpeg（含 `libx264`、`libass`）和 FFprobe；代码侧使用 Node 内置模块，不需 `npm install`。`Pillow` 仅供接触表、字幕/安全区检查等 Python 辅助脚本使用；使用这些脚本前可检查 `python -c "import PIL"`，缺失时按需安装：
+
+```powershell
+python -m pip install -r skills/lyric-driven-code-mv/requirements.txt
+```
+
+macOS/Linux 可将整个目录复制到 `~/.codex/skills/lyric-driven-code-mv`（若设置了 `CODEX_HOME`，使用其下的 `skills/` 目录）。其他框架、字体、模型、API 或付费服务均为可选项，不会由 Skill 静默安装或调用。已安装同名 Skill 时先备份并比较本地改动，再更新，避免覆盖个人修改。
 
 ## 先跑通 12 秒
 
@@ -269,7 +301,7 @@ node skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs skills/lyric-dr
 node skills/lyric-driven-code-mv/scripts/hud-density.mjs skills/lyric-driven-code-mv/assets/storyboard-example.json --max-gap 12
 python skills/lyric-driven-code-mv/scripts/timeline-sync.py work/beat120.wav --storyboard skills/lyric-driven-code-mv/assets/storyboard-example.json -o work/timeline.png
 python skills/lyric-driven-code-mv/scripts/safe-area.py --video work/demo.mp4 --at 3 10 -o work/safe-check.png
-python skills/lyric-driven-code-mv/scripts/minimal-renderer.py skills/lyric-driven-code-mv/assets/storyboard-example.json --probe 0 120 300
+python skills/lyric-driven-code-mv/scripts/minimal-renderer.py skills/lyric-driven-code-mv/assets/storyboard-example.json --probe 0 120 300 --out work/probe
 node --test
 ```
 
