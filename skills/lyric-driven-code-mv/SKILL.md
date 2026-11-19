@@ -1,6 +1,8 @@
 ---
 name: lyric-driven-code-mv
-description: Use when a music video needs code animation that responds to lyric meaning, especially pixel game narratives with characters, quests, recurring motifs, and music timing. 适用于歌词呼应的代码音乐 MV、像素游戏叙事分镜及其实现；单纯频谱动画或普通口播剪辑无需使用。
+description: Use when creating or improving lyric-driven code music videos with pixel characters, game/interface narratives, recurring motifs, or music timing; also when character designs feel generic or indistinguishable, the chorus lacks payoff, or visuals blur or cut stiffly. Do not use for standalone lyric/karaoke subtitles or typography-only music videos; route those to music-to-video. 中文：适用于用户说“帮我把这首歌做成 MV”、创作歌词驱动的像素角色/游戏界面叙事，或改进角色辨识度、副歌高潮、画面清晰度和转场的任务。不用于纯歌词/K歌字幕或纯文字卡点视频；此类使用 music-to-video。
+metadata:
+  channel: local
 ---
 
 # 歌词驱动代码 MV
@@ -16,24 +18,20 @@ description: Use when a music video needs code animation that responds to lyric 
 3. **让背景推动行动。** 先用一句话串起主角的目标、阻碍、选择和结局，再随实际歌曲段落安排可见的行动与后果。默认可以用原创角色转译真实背景，明确区分事实与改编。例如，仅证实创作与迁居有关，可让虚构主角在主歌打包旧物、副歌试着寄回钥匙、尾声决定把钥匙留下。迁居有出处，钥匙是编剧的道具，不是真人轶事。
 4. **接到成片。** 把人物写进 `actors`，把行动和后果写进每镜的 `objective`、`action`、`feedback`、`outcome`，并在对应 `scene.id` 的画法中实际呈现；重复副歌应看见前一次选择造成的变化。继续下面的样片、渲染和验收步骤，按用户要求的时长交付，不停在背景摘要。无法联网或查不到可靠材料时，说明限制，按歌词或器乐情绪创作并标明「原创演绎，非真实经历」。
 
+人物设定、研究记录与故事弧的详细模板见 [从一首歌到连续分镜](references/research-and-story.md)。从歌曲分析、逐阶段提示词到动作样片和交付，可继续读 [像素 MV 分阶段制作](references/pixel-mv-production.md)。已有成片出现角色、高潮、清晰度或转场问题时，先读 [进阶评审与定向优化](references/mv-review-and-refinement.md)，按同一量尺定向修改与复评。
 ## 工作流程
 
-**先做依赖预检。** Pillow 只被 `scripts/` 下 5 个 Python 脚本使用，声明在仓库根 `requirements.txt`：
-
-```sh
-python -c "import PIL" 2>/dev/null || python -m pip install pillow
-```
-
-Windows PowerShell 用 `python -c "import PIL"; if ($LASTEXITCODE -ne 0) { python -m pip install pillow }`。
+**先做依赖预检。** Pillow 只被 `scripts/` 下的 Python 脚本使用，声明在技能目录的 `requirements.txt`。先运行 `python -c "import PIL"` 检查并报告缺失；如确实需要安装，先向用户说明 `Pillow`、版本、用途和安装命令，得到同意后再执行，不把 `pip install` 放进自动预检。
 
 Node 侧零第三方包：`scripts/`、`assets/scenes/`、`assets/templates/starter/` 下的 `.mjs` 只 import `node:` 内置模块，skill 目录内没有 `package.json`，**不需要 `npm install`，离线可用**——`validate-storyboard.mjs`、`hud-density.mjs` 同样如此。FFmpeg/FFprobe 是系统二进制，按第 4 步核对。
 
 1. **固定输入与证据。** 确认歌曲文件及版本、校对歌词、截取范围、画幅、人物设定和交付范围。自己找歌时先读 [音频与授权](references/audio-and-rights.md)，核对作品及录音的使用条件。分析参考片时分别记录可见事实、音频核对结果和实现推断；只有完成全时段检查才称“看完整片”。作者工具无源码或声明证据时标为未知。
 2. **建立两条时间线。** 标注句起止、段落、重要重音和留白；语义表记录人物关系、意象和动作。读 [时间与分镜](references/storyboard-and-timing.md)，统一成片坐标与原曲偏移。器乐配原创叙事字幕时说明文案角色，不当作演唱转录。已有 FFmpeg 时先用 `scripts/analyze-audio.mjs` 生成离线能量、停顿、起音和 BPM/相位候选；需要同轴检查镜头和字幕时读 [同步候选图](references/sync-review.md)。不把候选当歌词对齐，无法试听也可完成透明标注的草稿。
-3. **先选装置，再选场景。** 先确定聊天、游戏系统、时间轴、计数器、章节牌、视角或材质舞台，再为每镜写目标→行动→反馈→结果。用 `chapters[]` 记录标题牌、关系阶段和结算；用 `scene.hud[]` 表达数值、状态、归零、损坏或失败的情绪反馈；同构图换季节、材质或年代时写 `materialVariant`。镜长由信息密度决定，不设固定上限；建议每 8–12 秒至少有一次可读变化，长镜头也可用于等待和留白。参考 [装置与章节](references/story-devices.md) 和 [HUD 与字幕](references/hud-and-subtitles.md)；要现成骨架时从 [装置模板](references/device-templates.md) 的五个 JSON（私信、读档、清单、结算、双轴滑块）里挑一个改写，别从空白开始。反复意象安排首次出现、变化和再出现；重复副歌增加信息或后果。保留人物身份、装束和道具来龙去脉。像素美术、摄像机、字幕和双人叙事读 [像素世界与演出](references/pixel-game-visuals.md)。
-4. **选择一种实现路线。** 沿用用户指定框架及现有工程。无框架且需要最小可运行工程时，复制 `assets/templates/starter/`：仅 Node 内置模块与 FFmpeg 即可预览和导出。HTML 动效工程可采用 HyperFrames，React 工程优先 Remotion。实现前读 [依赖与交付](references/dependencies-and-delivery.md)，列出必需项、已有项和可选项；安装包、下载浏览器/模型/字体、使用 API 或付费服务前先说明并沿用已有授权。
-5. **完成代表片段。** 新作品先完成约 10–15 秒，包含人物动作、歌词意象任务、反馈变化及转场；用户指定其他长度或修改已有工程时按其范围。分镜 JSON 作为时长、歌词、场景边界、转场及音乐状态的真源，代码按 `scene.id` 提供画法。每帧由时间直接求值，粒子固定种子。出口转场占前镜尾段，下一镜固定 `local=0` 预卷，不增加总时长。执行结构校验和 `scripts/qa.mjs` 的重复、逆序、乱序像素比较。
-6. **扩展与验收。** 先预览代表片段，核对动作峰值、句尾、转场、歌词面板与摄像机边缘，再扩展已授权范围。参考像素歌词视频时，在分镜顶层使用 `captionStyle.mode:"scene-panel"`，让浏览器预览、ASS 导出和章节牌保持同一套暖白/描边/像素面板参数；不提供时保留普通底部字幕兼容旧稿。导出后执行 FFprobe、完整解码、接触表和关键帧检查；具备播放条件时完整播放，逐项记录真实完成的检查。不能试听时交付 `draft`，明确待核对落点，不能声称音画已核对。
+3. **先过角色辨识度，再选装置与场景。** 三人以上主要角色先建立角色卡和等尺度纯黑剪影对照；去掉名字、配色和小道具后，仍须凭头部/服装轮廓、身形比例或姿态中的至少两类区分每人。群像最小实际显示尺寸和单人近景都要通过；失败时先重画角色，不靠换色、加小饰品或滤镜掩盖。
+4. **先选装置，再选场景。** 先确定聊天、游戏系统、时间轴、计数器、章节牌、视角或材质舞台，再为每镜写目标→行动→反馈→结果。用 `chapters[]` 记录标题牌、关系阶段和结算；用 `scene.hud[]` 表达数值、状态、归零、损坏或失败的情绪反馈；同构图换季节、材质或年代时写 `materialVariant`。镜长由信息密度决定，不设固定上限；建议每 8–12 秒至少有一次可读变化，长镜头也可用于等待和留白。参考 [装置与章节](references/story-devices.md) 和 [HUD 与字幕](references/hud-and-subtitles.md)；要现成骨架时从 [装置模板](references/device-templates.md) 的五个 JSON（私信、读档、清单、结算、双轴滑块）里挑一个改写，别从空白开始。反复意象安排首次出现、变化和再出现；重复副歌增加信息或后果。保留人物身份、装束和道具来龙去脉。像素美术、摄像机、字幕和双人叙事读 [像素世界与演出](references/pixel-game-visuals.md)。
+5. **选择一种实现路线。** 沿用用户指定框架及现有工程。无框架且需要最小可运行工程时，复制整个 `assets/templates/starter/`；其中已包含共享核心与运行文件，复制后可独立运行 `node export.mjs --help`。HTML 动效工程可采用 HyperFrames，React 工程优先 Remotion。实现前读 [依赖与交付](references/dependencies-and-delivery.md)，列出必需项、已有项和可选项；安装包、下载浏览器/模型/字体、使用 API 或付费服务前先说明并沿用已有授权。
+6. **完成代表片段。** 新作品先交角色卡/剪影表、原尺寸动作条和约10–15秒样片；若有三人以上主角，样片须同时包含一个单人辨识镜头和一个群像镜头，确认单人近景切回群像后仍能认出同一角色。样片还必须包含歌词意象任务、反馈变化及转场；用户指定其他长度或修改已有工程时按其范围。分镜 JSON 作为时长、歌词、场景边界、转场及音乐状态的真源，代码按 `scene.id` 提供画法。每帧由时间直接求值，粒子固定种子。出口转场占前镜尾段，下一镜固定 `local=0` 预卷，不增加总时长。执行结构校验和 `scripts/qa.mjs` 的重复、逆序、乱序像素比较。
+8. **扩展与验收。** 先预览代表片段，核对动作峰值、句尾、转场、歌词面板与摄像机边缘，再扩展已授权范围。参考像素歌词视频时，在分镜顶层使用 `captionStyle.mode:"scene-panel"`，让浏览器预览、ASS 导出和章节牌保持同一套暖白/描边/像素面板参数；不提供时保留普通底部字幕兼容旧稿。导出后执行 FFprobe、完整解码、接触表和关键帧检查；具备播放条件时完整播放，逐项记录真实完成的检查。不能试听时交付 `draft`，明确待核对落点，不能声称音画已核对。
 
 ## 音乐证据与交付阶段
 
@@ -68,40 +66,40 @@ fb.rect(0, 190, 384, 26, foreground); // 前景遮挡
 
 复制 [原创 12 秒分镜](assets/storyboard-example.json) 并替换内容。最小工程见 [starter 说明](assets/templates/starter/README.md)，自带纸船、两岸灯光、尾段转场、高分辨率字幕及本地生成的原创节奏。`export.mjs --storyboard` 读取分镜配置；真实歌曲先更新 `project.audio` 与证据，`--audio` 只能重定位同一素材，按 `scene.id` 调整或注册画法。导出保存实际音轨哈希及来源记录，外部音轨有 `credit` 时生成片尾短署名，发布前仍核对完整署名义务。字幕与音乐状态提示由 JSON 生成。
 
-以下在 skill 目录运行；其他目录使用脚本的绝对路径：
+以下在视频工程根目录运行；将 `<SKILL_DIR>` 替换为技能安装目录的绝对路径，分镜/素材输入也用对应路径；所有 `work/` 输出相对视频工程根目录。不要从 Skill 安装目录运行会写文件的命令：
 
 ```sh
-node scripts/analyze-audio.mjs path/to/song.wav --start 37.2 --duration 12 --out work/audio-analysis.json
-node scripts/validate-storyboard.mjs assets/storyboard-example.json
-node scripts/validate-storyboard.mjs path/to/storyboard.json --delivery
-node scripts/visualize-sync.mjs path/to/storyboard.json work/audio-analysis.json --out work/sync-review.svg
-node scripts/qa.mjs assets/templates/starter/frame.mjs --duration 12 --fps 30 --storyboard assets/storyboard-example.json --out work/qa.json
-node scripts/verify-sfx.mjs --audio work/mixed.wav --storyboard work/storyboard.json --window-ms 50 --out work/sfx-evidence.json
-node scripts/lrc.mjs --lrc work/song.lrc --offset 12 --storyboard work/storyboard.json --out work/lyrics.json
-node scripts/new-storyboard.mjs --preset narrative-12 --duration 90 --lyrics work/lyrics.json --out work/storyboard.json
-node assets/templates/starter/export.mjs --storyboard assets/storyboard-example.json --out work/demo.mp4
-node assets/templates/starter/export.mjs --frame-time 5.55 --frame-out work/world-frame.png
-node assets/templates/starter/export.mjs --storyboard path/to/storyboard.json --audio path/to/song.wav --out work/mv.mp4
+node "<SKILL_DIR>/scripts/analyze-audio.mjs" path/to/song.wav --start 37.2 --duration 12 --out work/audio-analysis.json
+node "<SKILL_DIR>/scripts/validate-storyboard.mjs" "<SKILL_DIR>/assets/storyboard-example.json"
+node "<SKILL_DIR>/scripts/validate-storyboard.mjs" path/to/storyboard.json --delivery
+node "<SKILL_DIR>/scripts/visualize-sync.mjs" path/to/storyboard.json work/audio-analysis.json --out work/sync-review.svg
+node "<SKILL_DIR>/scripts/qa.mjs" "<SKILL_DIR>/assets/templates/starter/frame.mjs" --duration 12 --fps 30 --storyboard "<SKILL_DIR>/assets/storyboard-example.json" --out work/qa.json
+node "<SKILL_DIR>/scripts/verify-sfx.mjs" --audio work/mixed.wav --storyboard work/storyboard.json --window-ms 50 --out work/sfx-evidence.json
+node "<SKILL_DIR>/scripts/lrc.mjs" --lrc work/song.lrc --offset 12 --storyboard work/storyboard.json --out work/lyrics.json
+node "<SKILL_DIR>/scripts/new-storyboard.mjs" --preset narrative-12 --duration 90 --lyrics work/lyrics.json --out work/storyboard.json
+node "<SKILL_DIR>/assets/templates/starter/export.mjs" --storyboard "<SKILL_DIR>/assets/storyboard-example.json" --out work/demo.mp4
+node "<SKILL_DIR>/assets/templates/starter/export.mjs" --frame-time 5.55 --frame-out work/world-frame.png
+node "<SKILL_DIR>/assets/templates/starter/export.mjs" --storyboard path/to/storyboard.json --audio path/to/song.wav --out work/mv.mp4
 ```
 
 量节奏、看音画、查安全区、做点阵标题牌：
 
 ```sh
-node scripts/hud-density.mjs path/to/storyboard.json --max-gap 12        # 可读变化密度与空白窗
-python scripts/sync-audit.py path/to/storyboard.json \
+node "<SKILL_DIR>/scripts/hud-density.mjs" path/to/storyboard.json --max-gap 12        # 可读变化密度与空白窗
+python "<SKILL_DIR>/scripts/sync-audit.py" path/to/storyboard.json \
   --analysis work/audio-analysis.json --video work/mv.mp4               # 出片前一条命令查全部时间问题
-python scripts/layout-check.py path/to/storyboard.json \
+python "<SKILL_DIR>/scripts/layout-check.py" path/to/storyboard.json \
   --hud "档案:56,44,596,200" --hud "神选度:1256,44,1794,200" \
-  --log "56,700,640,880" --subtitle-band "360,930,1560,1020" \
+  --log "56,700,640,880" --subtitle-band "360,930,1560,988" \
   --safe "right=124,bottom=92" --scenes "s09-ledger:full-ui"
-python scripts/timeline-sync.py song.wav --storyboard storyboard.json -o work/timeline.png
-python scripts/safe-area.py --video work/mv.mp4 --at 3 10 -o work/check.png
-python scripts/film-sheet.py shots/<片名> -o sheet.jpg --cols 3
-python scripts/pixel-font.py --sample work/title-sample.png
-python scripts/minimal-renderer.py path/to/storyboard.json --probe 0 120 300
-node scripts/sfx.mjs --from-storyboard path/to/storyboard.json --out work/sfx.wav --report work/sfx-report.json
-node scripts/sfx.mjs --list
-node assets/templates/starter/export.mjs --storyboard path/to/storyboard.json --audio path/to/song.wav --sfx --out work/mv.mp4
+python "<SKILL_DIR>/scripts/timeline-sync.py" song.wav --storyboard storyboard.json -o work/timeline.png
+python "<SKILL_DIR>/scripts/safe-area.py" --video work/mv.mp4 --at 3 10 -o work/check.png
+python "<SKILL_DIR>/scripts/film-sheet.py" shots/<片名> -o sheet.jpg --cols 3
+python "<SKILL_DIR>/scripts/pixel-font.py" --sample work/title-sample.png
+python "<SKILL_DIR>/scripts/minimal-renderer.py" path/to/storyboard.json --probe 0 120 300 --out work/probe
+node "<SKILL_DIR>/scripts/sfx.mjs" --from-storyboard path/to/storyboard.json --out work/sfx.wav --report work/sfx-report.json
+node "<SKILL_DIR>/scripts/sfx.mjs" --list
+node "<SKILL_DIR>/assets/templates/starter/export.mjs" --storyboard path/to/storyboard.json --audio path/to/song.wav --sfx --out work/mv.mp4
 ```
 
 `scripts/lrc.mjs` 把 LRC 时点按 `--offset` 秒加到片段时钟，逐行推算 `end`；提供 `--storyboard` 时会为跨镜歌词补 `allowSceneSplit` 与原因。`scripts/new-storyboard.mjs` 生成 12 镜待填写骨架，歌词可从 JSON 直接导入。12 个画法资产位于 [assets/scenes](assets/scenes/README.md)，每个工厂都可配置主体取景位置、调色板和镜头时长。`--sfx-script PATH` 可让复制出去的 starter 使用自定义音效模块，不需要改源码。**成片默认不烧草稿水印**：`draft` 也不会在画面上盖字，核对进度由导出资产清单的 `musicStatus`/`draftMark` 与 `music.pendingChecks` 记录；确实需要成片内可见提示时显式写 `project.draftMark:true`（文案 `project.draftMarkText`）。
@@ -113,6 +111,7 @@ node assets/templates/starter/export.mjs --storyboard path/to/storyboard.json --
 ## 完成标准
 
 - 去掉字幕，动作仍能说明段落含义；HUD 变化可追溯到行动，道具先获得再使用。
+- 主要角色在纯黑剪影、最小群像尺寸和单人近景间仍可辨，不只靠颜色、姓名牌或小道具识别；单人近景使用独立细节资产，不把低分辨率群像精灵直接放大。
 - 重复段落有发展，等待、失败、完成及留白与歌曲情绪相称。
 - 同帧重复和乱序求值一致，首尾、每镜及转场没有状态漂移；摄像机移动不露黑，字幕清晰。
 - 字幕底边与 HUD 都在平台安全区内：用 `safe-area.py` 叠一帧确认，别只看成片。

@@ -22,7 +22,7 @@ export function verifySfxEvents({ events, samples, sampleRate = 8000, duration, 
   finite(sampleRate, 'sampleRate', 1); finite(duration, 'duration', Number.EPSILON); finite(windowMs, 'windowMs', Number.EPSILON);
   finite(thresholdRatio, 'thresholdRatio', 1); finite(floor, 'floor');
   if (samples.length > sampleRate * (duration + 1 / sampleRate) || samples.length < Math.floor(duration * sampleRate * 0.95)) throw new Error('PCM 样本长度与 duration 不匹配');
-  if (events.length !== 45) throw new Error(`预期检查45个音效事件，实际${events.length}个`);
+  if (events.length === 0) return { schemaVersion: 1, status: 'skip', reason: '分镜没有音效事件，跳过起音证据检查。', duration, sampleRate, windowMs, total: 0, hits: 0, events: [] };
   const windowSamples = Math.max(1, Math.round(sampleRate * windowMs / 1000)), actualWindowMs = windowSamples / sampleRate * 1000;
   const results = events.map((event, index) => {
     if (!event || !Number.isFinite(event.at) || event.at < 0 || event.at >= duration) throw new Error(`事件${index + 1}的 at 必须位于 [0,duration)`);
@@ -81,11 +81,12 @@ async function run(argv) {
   const samples = await decodePcm(ffmpeg, resolve(opts['--audio']), sampleRate);
   const report = verifySfxEvents({ events, samples, sampleRate, duration, windowMs: Number(opts['--window-ms'] ?? 50) });
   if (opts['--out']) await import('node:fs/promises').then(fs => fs.writeFile(resolve(opts['--out']), `${JSON.stringify(report, null, 2)}\n`));
+  if (report.status === 'skip') { console.log(report.reason); return; }
   console.log(`音效起音检查 ${report.status}：${report.hits}/${report.total} 命中（包络窗 ${report.windowMs}ms）`);
   console.log('事件\t时点\t结果\t基线 RMS\t起音峰值\t倍率\t起音证据窗');
   for (const event of report.events) console.log(`${event.id}\t${event.at.toFixed(3)}s\t${event.hit ? '命中' : '未命中'}\t${event.evidence.baseline}\t${event.evidence.peak}\t${event.evidence.ratio}×\t${event.evidence.onsetWindow.join('–')}s`);
   console.log(JSON.stringify({ method: '50ms RMS envelope + onset rise', total: report.total, hits: report.hits, events: report.events.map(({ id, at, hit, evidence }) => ({ id, at, hit, evidence })) }, null, 2));
-  if (report.status !== 'pass') process.exitCode = 1;
+  if (report.status === 'fail') process.exitCode = 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) run(process.argv.slice(2)).catch(error => { console.error(`音效证据校验失败：${error.message}`); process.exitCode = 1; });

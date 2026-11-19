@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 
@@ -59,6 +60,29 @@ test('越界事件被裁掉并记入 clipped，不抛错', () => {
   assert.equal(report.events, 2);
   assert.equal(report.clipped.length, 1);
   assert.equal(report.clipped[0].type, 'chime');
+});
+
+test('音效证据校验接受0、1、9和46个事件，不硬编码事件数量', async () => {
+  const { verifySfxEvents } = await import('../skills/lyric-driven-code-mv/scripts/verify-sfx.mjs');
+  const rate = 1000;
+  for (const count of [0, 1, 9, 46]) {
+    const duration = Math.max(1, count * 0.2 + 0.5);
+    const events = Array.from({ length: count }, (_, index) => ({ id: `e-${index + 1}`, at: 0.1 + index * 0.2 }));
+    const samples = new Float32Array(Math.ceil(duration * rate));
+    for (const event of events) {
+      const start = Math.round(event.at * rate);
+      samples.fill(0.5, start, start + 50);
+    }
+    const report = verifySfxEvents({ events, samples, sampleRate: rate, duration, windowMs: 50 });
+    if (count === 0) {
+      assert.equal(report.status, 'skip');
+      assert.equal(report.total, 0);
+    } else {
+      assert.equal(report.status, 'pass');
+      assert.equal(report.total, count);
+      assert.equal(report.hits, count);
+    }
+  }
 });
 
 test('事件时刻决定起音：at 之前必须近乎静音', () => {
@@ -163,6 +187,27 @@ test('示范分镜本身通过校验，且事件时间都落在 0.5s 拍点网�
       assert.ok(demo.music.beats.some((beat) => Math.abs(beat - item.at) < 1e-9), `${scene.id} 的音效 ${item.at}s 不在拍点网格上`);
     }
   }
+});
+
+test('bundled nine-event evidence demo passes the CLI without event-count assumptions', async t => {
+  const { requireMediaTools } = await import('./media-tools.mjs');
+  const tools = requireMediaTools(t, ['ffmpeg']); if (!tools) return;
+  const directory = mkdtempSync(join(tmpdir(), 'sfx-demo-nine-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const demoPath = new URL('../skills/lyric-driven-code-mv/assets/storyboard-sfx-demo.json', import.meta.url);
+  const demo = JSON.parse(readFileSync(demoPath, 'utf8'));
+  const events = collectSfx(demo);
+  assert.equal(events.length, 9);
+  const { pcm } = renderTimeline(events, demo.project.duration);
+  const audioPath = join(directory, 'mixed.wav'), evidencePath = join(directory, 'evidence.json');
+  writeFileSync(audioPath, encodeWav(pcm));
+  const cliPath = fileURLToPath(new URL('../skills/lyric-driven-code-mv/scripts/verify-sfx.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [cliPath, '--audio', audioPath, '--storyboard', fileURLToPath(demoPath), '--ffmpeg', tools.ffmpeg, '--out', evidencePath], { encoding: 'utf8', windowsHide: true, timeout: 15000 });
+  assert.equal(result.error, undefined); assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /9\/9 命中/);
+  const evidence = JSON.parse(readFileSync(evidencePath, 'utf8'));
+  assert.equal(evidence.events.length, 9);
+  assert.ok(evidence.events.every(event => event.hit));
 });
 
 test('音效混音保持音乐 RMS 不低于原始 RMS 的 90%', async t => {

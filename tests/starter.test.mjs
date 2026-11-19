@@ -1,14 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, mkdirSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
 import { join, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { requireMediaTools } from './media-tools.mjs';
 
 const base = new URL('../skills/lyric-driven-code-mv/assets/templates/starter/', import.meta.url);
+
+
+test('独立复制 starter 所需最小集合后 export --help 可运行', t => {
+  const root = mkdtempSync(join(tmpdir(), 'starter-copy-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const copiedAssets = join(root, 'assets');
+  mkdirSync(join(copiedAssets, 'templates'), { recursive: true });
+  cpSync(fileURLToPath(new URL('../../frame-core.mjs', base)), join(copiedAssets, 'frame-core.mjs'));
+  cpSync(fileURLToPath(base), join(copiedAssets, 'templates/starter'), { recursive: true });
+  const copiedStarter = join(copiedAssets, 'templates/starter');
+  const result = spawnSync(process.execPath, [join(copiedStarter, 'export.mjs'), '--help'], { cwd: copiedStarter, encoding: 'utf8', windowsHide: true });
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /用法/);
+});
 
 test('模板提供不依赖外部包的纯帧入口', async () => {
   assert.ok(existsSync(fileURLToPath(new URL('frame.mjs', base))), '缺少纯帧模块 frame.mjs');
@@ -141,6 +157,24 @@ test('实际编码后的输出路径错误返回失败，清理临时MP4和音�
   const result = spawnSync(process.execPath, [cli, '--out', target, '--width', '640', '--height', '360', '--fps', '1', '--ffmpeg', tools.ffmpeg, '--ffprobe', tools.ffprobe], { encoding: 'utf8', timeout: 15000, windowsHide: true });
   assert.equal(result.error, undefined); assert.equal(result.status, 1); assert.match(result.stderr, /导出失败/);
   assert.ok(existsSync(target)); assert.deepEqual(readdirSync(directory), ['cannot-replace-directory.mp4']);
+});
+
+test('minimal-renderer rejects default writes inside the skill and accepts project work outputs', t => {
+  const temp = mkdtempSync(join(tmpdir(), 'minimal-renderer-isolated-'));
+  t.after(() => rmSync(temp, { recursive: true, force: true }));
+  const isolatedSkill = join(temp, 'lyric-driven-code-mv');
+  cpSync(fileURLToPath(new URL('../skills/lyric-driven-code-mv/', import.meta.url)), isolatedSkill, { recursive: true });
+  const renderer = join(isolatedSkill, 'scripts/minimal-renderer.py');
+  const storyboard = join(isolatedSkill, 'assets/storyboard-example.json');
+  const python = process.env.PYTHON || 'python';
+  const denied = spawnSync(python, ['-X', 'utf8', renderer, storyboard, '--probe', '0'], { cwd: isolatedSkill, encoding: 'utf8', windowsHide: true });
+  assert.notEqual(denied.status, 0);
+  assert.match(`${denied.stdout}\n${denied.stderr}`, /技能安装目录/);
+  assert.equal(existsSync(join(isolatedSkill, 'work')), false);
+  const projectWork = join(temp, 'project/work/probe');
+  const allowed = spawnSync(python, ['-X', 'utf8', renderer, storyboard, '--probe', '0', '--out', projectWork], { cwd: isolatedSkill, encoding: 'utf8', windowsHide: true });
+  assert.equal(allowed.status, 0, allowed.stderr);
+  assert.equal(readdirSync(projectWork).length, 1);
 });
 
 test('恢复导出核对配置及每个已存PNG尺寸，拒绝混用和损坏', async t => {

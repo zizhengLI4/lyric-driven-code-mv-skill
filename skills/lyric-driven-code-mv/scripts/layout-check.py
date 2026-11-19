@@ -10,7 +10,7 @@
 用法：
   python layout-check.py storyboard.json \\
     --hud "档案:56,44,596,200" --hud "神选度:1256,44,1794,200" \\
-    --log "56,700,640,880" --subtitle-band "360,930,1560,1020" \\
+    --log "56,700,640,880" --subtitle-band "360,930,1560,988" \\
     --safe "right=124,bottom=92" --scenes "s09-ledger:full-ui"
 
   python layout-check.py storyboard.json --hud "结算面板:0,0,1920,1080" --json
@@ -430,7 +430,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="按矩形声明检查 HUD/日志/字幕带的重叠与安全区越界（纯几何，不读图片）",
         epilog='示例：python layout-check.py storyboard.json --hud "档案:56,44,596,200" '
-               '--subtitle-band "360,930,1560,1020" --scenes "s09-ledger:full-ui"',
+               '--subtitle-band "360,930,1560,988" --scenes "s09-ledger:full-ui"',
     )
     parser.add_argument("storyboard", help="分镜 JSON（只用 project.width/height 与可选安全边距）")
     parser.add_argument("--hud", action="append", default=[], metavar='"名称:x,y,x1,y1"',

@@ -17,7 +17,7 @@ Canvas/SVG 是浏览器原生能力；已有浏览器不代表框架要求的版
 
 ## 从已有模板看到画面
 
-无工程时从包内 [starter 说明](../assets/templates/starter/README.md) 开始，复制整个 `assets/templates/starter/` 后保留 `frame.mjs`、`timeline.mjs`、`png.mjs` 与预览/导出入口。以下在 skill 目录运行，用新目录保存自己的工程：
+无工程时从包内 [starter 说明](../assets/templates/starter/README.md) 开始，复制整个 `assets/templates/starter/` 后保留 `frame.mjs`、同目录的 `frame-core.mjs`、`timeline.mjs`、`png.mjs` 与预览/导出入口；复制后应能独立执行 `node export.mjs --help`。以下在视频工程根目录运行；脚本与模板从技能安装目录读取，所有新文件保存到视频工程的 `work/`：
 
 ```powershell
 New-Item -ItemType Directory -Path 'work' -Force | Out-Null

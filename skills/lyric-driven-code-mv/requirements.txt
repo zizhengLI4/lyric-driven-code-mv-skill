@@ -1,0 +1,6 @@
+# scripts/ 下 5 个 Python 脚本依赖 Pillow：film-sheet.py（在函数内 import，顶层 grep 会漏）、
+# minimal-renderer.py、pixel-font.py、safe-area.py、timeline-sync.py。
+# 另外两个只用标准库，不需要额外安装：layout-check.py（纯几何计算）、
+# sync-audit.py（时间轴核对；给 --video 时才调 ffmpeg/ffprobe 命令行，不走 Python 包）。
+# Node 侧（scripts/*.mjs、assets/scenes、assets/templates/starter）只用 node: 内置模块，不需要 npm install。
+Pillow>=10.0

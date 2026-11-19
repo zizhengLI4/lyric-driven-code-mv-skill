@@ -600,7 +600,7 @@ export function analyzeStoryboard(data, options = {}) {
           const nearest = beats.reduce((closest, beat) => Math.abs(event.at - beat) < Math.abs(event.at - closest) ? beat : closest);
           const offsetMs = (event.at - nearest) * 1000;
           if (Math.abs(offsetMs) > beatToleranceMs + EPSILON) {
-            warn(`${eventPath}.at`, `sync:"beat" 偏离最近节拍 ${nearest} 秒：offsetMs=${Number(offsetMs.toFixed(3))}；容差 ${beatToleranceMs} ms`);
+            warn(`${eventPath}.at`, `sync:"beat" 最近节拍=${Math.round(nearest * 1000)}ms，偏差 offsetMs=${Number(offsetMs.toFixed(1))}；容差 ${beatToleranceMs}ms`);
           }
         }
       }

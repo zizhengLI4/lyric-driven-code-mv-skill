@@ -144,3 +144,6 @@ ffmpeg -v error -i C:\你的输出目录\paper-boat-demo.mp4 -f null -
 ffmpeg -y -ss 5.55 -i C:\你的输出目录\paper-boat-demo.mp4 -frames:v 1 C:\你的输出目录\transition.png
 ffmpeg -y -ss 11.9 -i C:\你的输出目录\paper-boat-demo.mp4 -frames:v 1 C:\你的输出目录\ending.png
 ```
+
+
+`frame.mjs` 与 `frame-core.mjs` 同目录，复制本目录即可独立运行 `export.mjs --help`。

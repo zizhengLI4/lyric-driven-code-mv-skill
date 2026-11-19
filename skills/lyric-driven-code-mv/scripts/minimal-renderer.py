@@ -13,6 +13,7 @@
   2. 每个像素只由成片秒 t 决定。不许读上一帧、不许累加。粒子用固定种子。
   3. 文字直接画在放大后的画面上。画在虚拟层再放大，34px 的字会变成 5x5 的砖块。
 """
+import argparse
 import json
 import math
 import os
@@ -20,6 +21,7 @@ import random
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -445,24 +447,45 @@ def load(path):
     return sbc
 
 
-def main(argv):
-    if not argv:
-        print(__doc__)
+def guard_output_path(path: Path) -> None:
+    """Never create generated files inside the installed skill directory."""
+    skill_root = Path(__file__).resolve().parent.parent
+    destination = path.resolve()
+    try:
+        destination.relative_to(skill_root)
+    except ValueError:
         return
-    sbc = load(argv[0])
+    raise SystemExit(
+        f"拒绝将生成文件写入技能安装目录：{destination}。请从视频工程根目录运行，"
+        "并用 --out 指向工程内 work/ 下的输出路径。"
+    )
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("storyboard", help="分镜 JSON 文件")
+    parser.add_argument("--probe", nargs="+", type=int, metavar="FRAME", help="只输出指定帧序号的 PNG")
+    parser.add_argument("--out", type=Path, help="视频输出路径；--probe 模式下为 PNG 输出目录")
+    args = parser.parse_args(argv)
+    sbc = load(args.storyboard)
     p = sbc["project"]
     total = int(round(p["duration"] * p["fps"]))
 
-    if "--probe" in argv:
-        idxs = [int(x) for x in argv[argv.index("--probe") + 1:] if x.isdigit()]
-        os.makedirs("work/probe", exist_ok=True)
-        for i in idxs:
-            render_frame(i, sbc).save(f"work/probe/frame_{i:05d}.png")
-            print(f"已保存 work/probe/frame_{i:05d}.png")
+    if args.probe is not None:
+        if any(index < 0 or index >= total for index in args.probe):
+            parser.error(f"--probe 帧序号必须位于 0–{total - 1}")
+        directory = args.out or Path("work/probe")
+        guard_output_path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        for index in args.probe:
+            output = directory / f"frame_{index:05d}.png"
+            render_frame(index, sbc).save(output)
+            print(f"已保存 {output}")
         return
 
-    os.makedirs("work", exist_ok=True)
-    out = "work/silent.mp4"
+    out = args.out or Path("work/silent.mp4")
+    guard_output_path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
     if not shutil.which("ffmpeg"):
         raise SystemExit("找不到 ffmpeg，请先安装并确认它在 PATH 上（本脚本靠它把裸帧编成 MP4）。")
     cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",

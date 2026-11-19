@@ -1,0 +1,4 @@
+__pycache__/
+*.py[cod]
+# 脚本默认输出目录（pixel-font / safe-area / minimal-renderer 会写这里）
+work/

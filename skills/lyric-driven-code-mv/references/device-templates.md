@@ -45,8 +45,8 @@
 ## 自检
 
 ```powershell
-node skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs --strict storyboard.json
-node skills/lyric-driven-code-mv/scripts/hud-density.mjs storyboard.json --max-gap 12
+node "<SKILL_DIR>/scripts/validate-storyboard.mjs" --strict storyboard.json
+node "<SKILL_DIR>/scripts/hud-density.mjs" storyboard.json --max-gap 12
 ```
 
 第二条会告诉你：这个装置在时间轴上哪里空了、空多久。空窗超过 12 秒，先从模板的 `events` 里补一条变化，别再想着加镜头。

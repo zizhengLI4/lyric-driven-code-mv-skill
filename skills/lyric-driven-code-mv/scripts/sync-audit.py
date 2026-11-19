@@ -460,7 +460,7 @@ def check_chapters(report, storyboard):
                 report.warn("chapter", f"music.sections[{index}].{edge}={value} 不在任何切点上；"
                                        f"按段落口径对齐时这一项会拉偏统计。")
     if chapters or sections:
-        report.info("chapter", f"章节 {len(chapters)} 块、段落 {len(sections)} 段，边界与切点已核对。")
+        report.info("chapter", f"检查已完成（见上方 ⚠）；章节 {len(chapters)} 块、段落 {len(sections)} 段。")
 
 
 def measure_subtitles(video, samples=12):

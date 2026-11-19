@@ -7,7 +7,7 @@ import {
   blendFrames as coreBlendFrames,
   renderTimelineFrame as coreRenderTimelineFrame,
   frameOptionsForStoryboard as coreFrameOptionsForStoryboard,
-} from '../../frame-core.mjs';
+} from './frame-core.mjs';
 
 export { WIDTH, HEIGHT, CAMERA_LIMITS, FB, seeded };
 
