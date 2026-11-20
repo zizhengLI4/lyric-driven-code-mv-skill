@@ -290,6 +290,28 @@ test('--json 写出机器可读报告', t => {
   assert.ok(Array.isArray(payload.items));
 });
 
+test('JSON 输出拒绝覆盖分镜或离线分析输入', t => {
+  const board = storyboard();
+  const { dir, sb, args } = setup(t, board, analysis(onsets([2.0, 7.0], [1.0, 3.0])));
+  const analysisPath = args[args.indexOf('--analysis') + 1];
+  const boardBytes = readFileSync(sb), analysisBytes = readFileSync(analysisPath);
+  assert.notEqual(run([...args, '--json', sb]).status, 0);
+  assert.notEqual(run([...args, '--json', analysisPath]).status, 0);
+  assert.deepEqual(readFileSync(sb), boardBytes);
+  assert.deepEqual(readFileSync(analysisPath), analysisBytes);
+});
+
+test('JSON 报告 refuses to overwrite storyboard or analysis inputs', t => {
+  const board = storyboard();
+  const { sb, args } = setup(t, board, analysis(onsets([2.0, 7.0], [1.0, 3.0])));
+  const analysisPath = args[args.indexOf('--analysis') + 1];
+  const boardBytes = readFileSync(sb), analysisBytes = readFileSync(analysisPath);
+  assert.notEqual(run([...args, '--json', sb]).status, 0);
+  assert.notEqual(run([...args, '--json', analysisPath]).status, 0);
+  assert.deepEqual(readFileSync(sb), boardBytes);
+  assert.deepEqual(readFileSync(analysisPath), analysisBytes);
+});
+
 test('分镜没有 beats 时用分析网格并明确来源', t => {
   const board = storyboard();
   delete board.music.beats;

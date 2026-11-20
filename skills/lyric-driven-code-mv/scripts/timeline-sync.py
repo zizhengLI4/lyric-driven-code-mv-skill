@@ -33,6 +33,7 @@ import subprocess
 import sys
 
 from PIL import Image, ImageDraw, ImageFont
+from path_safety import assert_no_path_aliases
 
 ALIGN_MODES = ("beats", "lyrics", "sections")
 ALIGN_HELP = "切镜对齐口径：beats（估出来的拍点）/ lyrics（歌词句头）/ sections（音乐段落起点），逗号分隔可多选"
@@ -378,6 +379,13 @@ def main(argv=None):
     parser.add_argument("--sr", type=int, default=8000, help="解码采样率，默认 8000")
     parser.add_argument("--align", default=None, help=ALIGN_HELP)
     args = parser.parse_args(argv)
+    try:
+        assert_no_path_aliases(
+            inputs=[args.source, args.storyboard],
+            outputs=[args.out, args.json_path],
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc))
 
     align_requested = parse_align(args.align) if args.align is not None else None
 

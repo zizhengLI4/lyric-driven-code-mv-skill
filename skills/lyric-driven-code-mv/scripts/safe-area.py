@@ -20,6 +20,7 @@ import sys
 import tempfile
 
 from PIL import Image, ImageDraw, ImageFont
+from path_safety import assert_no_path_aliases
 
 FONT_CANDIDATES = [
     "C:/Windows/Fonts/msyh.ttc",
@@ -152,6 +153,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     labels = not args.no_labels
+
+    if args.video:
+        base, ext = os.path.splitext(args.out)
+        output_paths = [f"{base}_{index}{ext or '.png'}" for index, _ in enumerate(args.at, 1)]
+        assert_no_path_aliases(inputs=[args.video, args.overlay], outputs=output_paths)
+    else:
+        assert_no_path_aliases(inputs=[args.overlay], outputs=[args.out])
 
     if args.video:
         base, ext = os.path.splitext(args.out)

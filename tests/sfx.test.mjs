@@ -15,6 +15,136 @@ const loadExample = () => JSON.parse(
   readFileSync(new URL('../skills/lyric-driven-code-mv/assets/storyboard-example.json', import.meta.url), 'utf8'),
 );
 
+test('SFX guide distinguishes BGM beat anchors from visual-event anchors and verifies mix causality', () => {
+  const guide = readFileSync(new URL('../skills/lyric-driven-code-mv/references/sfx-and-beat.md', import.meta.url), 'utf8');
+  assert.match(guide, /sourceOffset/);
+  assert.match(guide, /clip 秒|成片秒/);
+  assert.match(guide, /起始.*峰值|峰值.*起始/);
+  assert.match(guide, /RMS.*不能|不能.*RMS/);
+  assert.match(guide, /BGM-only 与 BGM\+SFX/);
+  assert.match(guide, /anchor: "visual" \| "beat" \| "free"/u);
+  assert.match(guide, /不能证明瞬变由 SFX 引起/u);
+});
+
+test('README and skill routing documents do not state that SFX must avoid beats', () => {
+  const paths = [
+    '../README.md',
+    '../skills/lyric-driven-code-mv/SKILL.md',
+    '../skills/lyric-driven-code-mv/assets/templates/starter/README.md',
+  ];
+  for (const path of paths) {
+    const document = readFileSync(new URL(path, import.meta.url), 'utf8');
+    assert.doesNotMatch(document, /音效不踩拍|音效落在画面事件上（不是拍点上）/u, path);
+  }
+});
+
+test('SFX timing metadata records waveform start separately from the intended impact time', () => {
+  const result = renderTimeline([
+    { at: 1.39, hitAt: 1.6, anchor: 'beat', type: 'whoosh', gain: 0.4 },
+  ], 3);
+  assert.deepEqual(result.report.placed[0], {
+    index: 0, at: 1.39, type: 'whoosh', startFrame: Math.round(1.39 * SAMPLE_RATE),
+    frames: Math.ceil(SFX.whoosh.duration * SAMPLE_RATE), gain: 0.4,
+    hitAt: 1.6, hitFrame: Math.round(1.6 * SAMPLE_RATE), anchor: 'beat',
+  });
+});
+
+test('mixed-only verifier labels RMS as transient evidence rather than SFX attribution', async () => {
+  const { verifySfxEvents } = await import('../skills/lyric-driven-code-mv/scripts/verify-sfx.mjs');
+  const rate = 1000, duration = 1, events = [{ id: 'drum', at: 0.4 }];
+  const samples = new Float32Array(rate * duration);
+  samples.fill(0.5, 400, 450); // A BGM drum transient can resemble a short SFX.
+  const report = verifySfxEvents({ events, samples, sampleRate: rate, duration, windowMs: 20 });
+  assert.equal(report.status, 'transient-only');
+  assert.equal(report.events[0].transientDetected, true);
+  assert.equal(report.events[0].sfxAttributedCandidate, null);
+});
+
+test('reference difference rejects a BGM-only transient and detects an added localized SFX candidate', async () => {
+  const { verifySfxEvents } = await import('../skills/lyric-driven-code-mv/scripts/verify-sfx.mjs');
+  const rate = 1000, duration = 1, events = [{ id: 'impact', at: 0.39, hitAt: 0.4, anchor: 'beat' }];
+  const bed = new Float32Array(rate * duration);
+  bed.fill(0.5, 400, 450);
+  const musicOnly = verifySfxEvents({ events, samples: bed, referenceSamples: bed, sampleRate: rate, duration, windowMs: 20 });
+  assert.equal(musicOnly.status, 'no-localized-difference');
+  assert.equal(musicOnly.events[0].sfxAttributedCandidate, false);
+
+  const mixed = bed.slice();
+  for (let i = 400; i < 410; i++) mixed[i] += 0.3;
+  const withSfx = verifySfxEvents({ events, samples: mixed, referenceSamples: bed, sampleRate: rate, duration, windowMs: 20 });
+  assert.equal(withSfx.status, 'difference-candidate');
+  assert.equal(withSfx.events[0].sfxAttributedCandidate, true);
+});
+
+test('SFX beat anchor validates hitAt while preserving a pre-roll at', () => {
+  const data = loadExample();
+  data.project.sfx = [{ at: 1.29, hitAt: 1.5, anchor: 'beat', type: 'whoosh' }];
+  assert.deepEqual(analyzeStoryboard(data).errors, []);
+  assert.ok(!analyzeStoryboard(data).warnings.some(item => item.includes('project.sfx[0].hitAt')));
+
+  data.project.sfx[0].hitAt = 1.6;
+  assert.ok(analyzeStoryboard(data).warnings.some(item => item.includes('project.sfx[0].hitAt') && item.includes('偏差')));
+  data.project.sfx[0] = { at: 1.6, hitAt: 1.5, anchor: 'beat', type: 'whoosh' };
+  assert.ok(analyzeStoryboard(data).errors.some(item => item.includes('hitAt') && item.includes('at')));
+  data.project.sfx[0] = { at: 1.29, anchor: 'beat', type: 'whoosh' };
+  assert.ok(analyzeStoryboard(data).errors.some(item => item.includes('project.sfx[0].hitAt')));
+  data.project.sfx[0] = { at: 1.29, hitAt: 1.5, anchor: 'unknown', type: 'whoosh' };
+  assert.ok(analyzeStoryboard(data).errors.some(item => item.includes('project.sfx[0].anchor')));
+});
+
+test('beat-anchored scene SFX is checked against the beat grid after scene collection', () => {
+  const data = loadExample();
+  data.scenes[0].sfx = [{ at: 4.3, hitAt: 4.7, anchor: 'beat', type: 'whoosh' }];
+  const warning = analyzeStoryboard(data).warnings.find(item => item.includes('scenes[0].sfx[0].hitAt'));
+  assert.match(warning, /偏差/);
+});
+
+test('SFX CLI refuses to overwrite its storyboard with a WAV or report', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'sfx-overwrite-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const storyboard = join(dir, 'storyboard.json');
+  const original = JSON.stringify({ project: { duration: 1, sfx: [{ at: 0.2, type: 'tick' }] }, scenes: [] });
+  writeFileSync(storyboard, original);
+  const script = fileURLToPath(new URL('../skills/lyric-driven-code-mv/scripts/sfx.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [script, '--from-storyboard', storyboard, '--out', storyboard], { encoding: 'utf8', windowsHide: true });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /alias|overwrite|覆盖/i);
+  assert.equal(readFileSync(storyboard, 'utf8'), original);
+});
+
+test('verification report preserves waveform start, intended hit, and anchor separately', async () => {
+  const { verifySfxEvents } = await import('../skills/lyric-driven-code-mv/scripts/verify-sfx.mjs');
+  const event = { id: 'lead-in-whoosh', at: 0.2, hitAt: 0.4, anchor: 'beat' };
+  const report = verifySfxEvents({ events: [event], samples: new Float32Array(1000), sampleRate: 1000, duration: 1 });
+  assert.equal(report.events[0].at, 0.2);
+  assert.equal(report.events[0].hitAt, 0.4);
+  assert.equal(report.events[0].anchor, 'beat');
+});
+
+test('SFX verifier refuses to overwrite its storyboard before decoding audio', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'verify-sfx-overwrite-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const storyboard = join(dir, 'storyboard.json');
+  const original = JSON.stringify({ project: { duration: 1, sfx: [{ at: 0.2, type: 'tick' }] }, scenes: [] });
+  writeFileSync(storyboard, original);
+  const script = fileURLToPath(new URL('../skills/lyric-driven-code-mv/scripts/verify-sfx.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [script, '--audio', join(dir, 'missing.wav'), '--storyboard', storyboard, '--out', storyboard], { encoding: 'utf8', windowsHide: true });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /alias|overwrite|覆盖/i);
+  assert.equal(readFileSync(storyboard, 'utf8'), original);
+});
+
+test('visual SFX anchor must point to an event in the same scene', () => {
+  const data = loadExample();
+  data.scenes[0].sfx = [{ at: 4.3, hitAt: 4.5, anchor: 'visual', type: 'whoosh' }];
+  assert.deepEqual(analyzeStoryboard(data).errors, []);
+  assert.ok(!analyzeStoryboard(data).warnings.some(item => item.includes('scenes[0].sfx[0].hitAt')));
+  data.scenes[0].sfx[0].hitAt = 4.6;
+  assert.ok(analyzeStoryboard(data).warnings.some(item => item.includes('scenes[0].sfx[0].hitAt') && item.includes('visual')));
+  data.project.sfx = [{ at: 4.3, hitAt: 4.5, anchor: 'visual', type: 'whoosh' }];
+  assert.ok(analyzeStoryboard(data).errors.some(item => item.includes('project.sfx[0].anchor')));
+});
+
 test('音效表就是这八种，顺序稳定', () => {
   assert.deepEqual(listSfx(), EXPECTED);
   for (const name of EXPECTED) assert.ok(SFX[name].duration > 0, `${name} 必须有正时长`);
@@ -78,7 +208,8 @@ test('音效证据校验接受0、1、9和46个事件，不硬编码事件数量
       assert.equal(report.status, 'skip');
       assert.equal(report.total, 0);
     } else {
-      assert.equal(report.status, 'pass');
+      assert.equal(report.status, 'transient-only');
+      assert.equal(report.events.every(event => event.sfxAttributedCandidate === null), true);
       assert.equal(report.total, count);
       assert.equal(report.hits, count);
     }
@@ -172,7 +303,7 @@ test('没有 sfx 字段时校验不受影响（向后兼容）', () => {
   assert.deepEqual(analyzeStoryboard(data).errors, []);
 });
 
-test('示范分镜本身通过校验，且事件时间都落在 0.5s 拍点网格上', () => {
+test('示范分镜视觉事件落在拍点，长音效波形可预启动而hitAt落在拍点', () => {
   const demo = JSON.parse(
     readFileSync(new URL('../skills/lyric-driven-code-mv/assets/storyboard-sfx-demo.json', import.meta.url), 'utf8'),
   );
@@ -184,7 +315,9 @@ test('示范分镜本身通过校验，且事件时间都落在 0.5s 拍点网�
       assert.equal(event.sync, 'beat');
     }
     for (const item of scene.sfx ?? []) {
-      assert.ok(demo.music.beats.some((beat) => Math.abs(beat - item.at) < 1e-9), `${scene.id} 的音效 ${item.at}s 不在拍点网格上`);
+      assert.equal(item.anchor, 'beat');
+      assert.ok(demo.music.beats.some((beat) => Math.abs(beat - item.hitAt) < 1e-9), `${scene.id} 的音效 hitAt ${item.hitAt}s 不在拍点网格上`);
+      assert.ok(item.at <= item.hitAt, `${scene.id} 的音效波形起点不得晚于 hitAt`);
     }
   }
 });
@@ -199,15 +332,20 @@ test('bundled nine-event evidence demo passes the CLI without event-count assump
   const events = collectSfx(demo);
   assert.equal(events.length, 9);
   const { pcm } = renderTimeline(events, demo.project.duration);
-  const audioPath = join(directory, 'mixed.wav'), evidencePath = join(directory, 'evidence.json');
+  const audioPath = join(directory, 'mixed.wav'), referencePath = join(directory, 'music-only.wav'), evidencePath = join(directory, 'evidence.json');
   writeFileSync(audioPath, encodeWav(pcm));
+  writeFileSync(referencePath, encodeWav(new Float32Array(pcm.length)));
   const cliPath = fileURLToPath(new URL('../skills/lyric-driven-code-mv/scripts/verify-sfx.mjs', import.meta.url));
-  const result = spawnSync(process.execPath, [cliPath, '--audio', audioPath, '--storyboard', fileURLToPath(demoPath), '--ffmpeg', tools.ffmpeg, '--out', evidencePath], { encoding: 'utf8', windowsHide: true, timeout: 15000 });
+  const result = spawnSync(process.execPath, [cliPath, '--audio', audioPath, '--reference-audio', referencePath, '--storyboard', fileURLToPath(demoPath), '--ffmpeg', tools.ffmpeg, '--out', evidencePath], { encoding: 'utf8', windowsHide: true, timeout: 15000 });
   assert.equal(result.error, undefined); assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /9\/9 命中/);
+  assert.match(result.stdout, /9\/9 个事件窗口检测到瞬变/);
+  assert.match(result.stdout, /BGM-only 参考轨/);
+  assert.match(result.stdout, /5\.790→6\.000s \(beat\)/);
   const evidence = JSON.parse(readFileSync(evidencePath, 'utf8'));
   assert.equal(evidence.events.length, 9);
-  assert.ok(evidence.events.every(event => event.hit));
+  assert.equal(evidence.status, 'difference-candidate');
+  assert.match(evidence.evidenceScope, /difference between aligned mixed PCM/);
+  assert.ok(evidence.events.every(event => event.hit && event.sfxAttributedCandidate));
 });
 
 test('音效混音保持音乐 RMS 不低于原始 RMS 的 90%', async t => {

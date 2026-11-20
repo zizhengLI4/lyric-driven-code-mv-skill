@@ -22,11 +22,13 @@
       {
         "at": 0,
         "type": "riser",
-        "gain": 0.4
+        "gain": 0.4,
+        "hitAt": 0.5,
+        "anchor": "beat"
       }
     ]
   },
-  "note": "音效卡点示范：画面事件落在 music.beats 网格上并标 sync:\"beat\"，每个事件配一个同帧音效；转场音单独落在两镜交界的拍点。",
+  "note": "SFX 的 at 是波形起点，hitAt 是预期听感冲击点；whoosh 提前启动、峰值落在节拍。画面事件与 BGM 重拍的关系由 music.beats 校验；长音效单独核对 attack/peak。",
   "device": {
     "id": "river-message-system",
     "type": "game-system",
@@ -235,17 +237,23 @@
         {
           "at": 1.5,
           "type": "tick",
-          "gain": 0.6
+          "gain": 0.6,
+          "hitAt": 1.5,
+          "anchor": "beat"
         },
         {
           "at": 3,
           "type": "tick",
-          "gain": 0.5
+          "gain": 0.5,
+          "hitAt": 3,
+          "anchor": "beat"
         },
         {
           "at": 5,
           "type": "type",
-          "gain": 0.55
+          "gain": 0.55,
+          "hitAt": 5,
+          "anchor": "beat"
         }
       ]
     },
@@ -333,29 +341,39 @@
       "exitTransition": "片段结束，无额外第三镜或黑场",
       "sfx": [
         {
-          "at": 6,
+          "at": 5.79,
           "type": "whoosh",
-          "gain": 0.5
+          "gain": 0.5,
+          "hitAt": 6.0,
+          "anchor": "beat"
         },
         {
           "at": 8,
           "type": "tick",
-          "gain": 0.55
+          "gain": 0.55,
+          "hitAt": 8,
+          "anchor": "beat"
         },
         {
           "at": 9,
           "type": "confirm",
-          "gain": 0.5
+          "gain": 0.5,
+          "hitAt": 9,
+          "anchor": "beat"
         },
         {
           "at": 9.5,
           "type": "click",
-          "gain": 0.45
+          "gain": 0.45,
+          "hitAt": 9.5,
+          "anchor": "beat"
         },
         {
           "at": 11.5,
           "type": "chime",
-          "gain": 0.55
+          "gain": 0.55,
+          "hitAt": 11.5,
+          "anchor": "beat"
         }
       ]
     }

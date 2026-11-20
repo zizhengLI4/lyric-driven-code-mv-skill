@@ -2,6 +2,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { assertNoPathAliases } from './path-safety.mjs';
 
 export const NARRATIVE_12 = Object.freeze([
   ['window', '隔窗', '室内与玻璃窗外'], ['leave', '离开', '夜晚街道'], ['empty', '空房', '空置房间'],
@@ -70,7 +71,11 @@ async function main(argv) {
   const lyrics = opts['--lyrics'] ? JSON.parse(await readFile(resolve(opts['--lyrics']), 'utf8').then(text => text.replace(/^\uFEFF/u, ''))) : [];
   const storyboard = buildNarrative12Storyboard({ duration: Number(opts['--duration']), lyrics: Array.isArray(lyrics) ? lyrics : lyrics.lyrics });
   const output = `${JSON.stringify(storyboard, null, 2)}\n`;
-  if (opts['--out']) await writeFile(resolve(opts['--out']), output, 'utf8');
+  if (opts['--out']) {
+    const outputPath = resolve(opts['--out']);
+    assertNoPathAliases({ inputs: [opts['--lyrics']].filter(Boolean), outputs: [outputPath] });
+    await writeFile(outputPath, output, 'utf8');
+  }
   else process.stdout.write(output);
 }
 

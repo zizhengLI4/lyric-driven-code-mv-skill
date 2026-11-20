@@ -35,6 +35,7 @@ import json
 import math
 import sys
 from pathlib import Path
+from path_safety import assert_no_path_aliases
 
 DEFAULT_CANVAS = (1920, 1080)
 DEFAULT_SAFE = {"right": 124, "bottom": 92}  # 1080p 下 6.5% 与 8.5%，四舍五入
@@ -448,6 +449,10 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true", help="输出 JSON 报告")
     parser.add_argument("--out", default=None, help="把报告写到文件")
     args = parser.parse_args(argv)
+    try:
+        assert_no_path_aliases(inputs=[args.storyboard], outputs=[args.out])
+    except ValueError as exc:
+        raise SystemExit(str(exc))
 
     issues = []
     rects = []

@@ -3,6 +3,7 @@ import { access, mkdir, stat, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { assertNoPathAliases } from './path-safety.mjs';
 
 const MAX_SECONDS = 600;
 const ABSOLUTE_RMS_FLOOR = 1e-5;
@@ -491,11 +492,7 @@ async function main(args) {
     const options = parseArgs(args);
     if (options.help) { console.log(usage); return; }
     const inputPath = resolve(options.input);
-    if (options.out) {
-      const outputPath = resolve(options.out);
-      const normalize = path => process.platform === 'win32' ? path.toLowerCase() : path;
-      if (normalize(inputPath) === normalize(outputPath)) throw new Error('报告输出不能覆盖源音频。');
-    }
+    if (options.out) assertNoPathAliases({ inputs: [inputPath], outputs: [options.out] });
     const samples = await decodeAudio(inputPath, options);
     const report = analyzePcm(samples, { sampleRate: options.sampleRate, sourceOffset: options.start, bpm: options.bpm, bpmSource: options.bpmSource, bpmEvidence: options.bpmEvidence });
     const json = JSON.stringify(report, null, 2) + '\n';

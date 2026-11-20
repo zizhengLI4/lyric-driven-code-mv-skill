@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -315,7 +316,7 @@ test('CLI reports malformed audio without a JavaScript stack after actual decodi
   assert.doesNotMatch(result.stderr, /\n\s+at /);
 });
 
-test('CLI refuses an output that would overwrite its source audio', t => {
+test('CLI refuses outputs that alias its source audio through direct paths and directory junctions', async t => {
   const directory = tempDirectory(t);
   const input = join(directory, 'keep source.wav');
   const original = wav(pulses(2));
@@ -323,6 +324,15 @@ test('CLI refuses an output that would overwrite its source audio', t => {
   const result = runCli([input, '--duration', '1', '--out', input]);
   assert.equal(result.status, 1);
   assert.deepEqual(readFileSync(input), original);
+  if (process.platform === 'win32') {
+    const aliasDirectory = join(directory, 'audio-directory-alias');
+    await symlink(directory, aliasDirectory, 'junction');
+    const aliasOutput = join(aliasDirectory, 'keep source.wav');
+    const viaAlias = runCli([input, '--duration', '1', '--out', aliasOutput]);
+    assert.equal(viaAlias.status, 1, viaAlias.stderr);
+    assert.match(viaAlias.stderr, /输入文件冲突/);
+    assert.deepEqual(readFileSync(input), original);
+  }
 });
 
 test('CLI help explains draft status and bounded memory without decoding anything', () => {

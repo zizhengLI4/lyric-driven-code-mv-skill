@@ -236,6 +236,24 @@ test('分镜没有 music.beats 时 beats 口径退回脚本估计并如实标注
   assert.equal(report.alignment.beats.source, 'estimated-beats', '没有分镜网格时要标出这是脚本估的');
 });
 
+test('PNG 与 JSON 输出分别拒绝覆盖音频或分镜输入', t => {
+  const first = setup(t);
+  const audioBytes = readFileSync(first.audio), storyboardBytes = readFileSync(first.sb);
+  assert.notEqual(run([first.audio, '--storyboard', first.sb, '-o', first.audio]).status, 0);
+  assert.notEqual(run([first.audio, '--storyboard', first.sb, '-o', join(first.dir, 'safe.png'), '--json', first.sb]).status, 0);
+  assert.deepEqual(readFileSync(first.audio), audioBytes);
+  assert.deepEqual(readFileSync(first.sb), storyboardBytes);
+});
+
+test('输出拒绝覆盖音频或分镜输入', t => {
+  const { audio, sb, dir } = setup(t);
+  const audioBytes = readFileSync(audio), storyboardBytes = readFileSync(sb);
+  assert.notEqual(run([audio, '--storyboard', sb, '-o', audio]).status, 0);
+  assert.notEqual(run([audio, '--storyboard', sb, '-o', join(dir, 'safe.png'), '--json', sb]).status, 0);
+  assert.deepEqual(readFileSync(audio), audioBytes);
+  assert.deepEqual(readFileSync(sb), storyboardBytes);
+});
+
 test('输出 PNG 与 JSON 都真实落盘', t => {
   const { audio, sb, png, json } = setup(t);
   const r = run([audio, '--storyboard', sb, '-o', png, '--json', json]);

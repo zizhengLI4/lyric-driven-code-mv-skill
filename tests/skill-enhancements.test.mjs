@@ -55,8 +55,8 @@ test('SFX verifier CLI prints a 45-event hit table and writes evidence JSON', as
   writeFileSync(storyboard, JSON.stringify({ project: { duration: 12, sfx: events }, scenes: [] }));
   const result = spawnSync(process.execPath, [resolveSkill('scripts/verify-sfx.mjs'), '--audio', audio, '--storyboard', storyboard, '--ffmpeg', tools.ffmpeg, '--out', reportPath], { encoding: 'utf8', timeout: 15000, windowsHide: true });
   assert.equal(result.error, undefined); assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /45\/45 命中/);
-  assert.match(result.stdout, /事件\s+时点\s+结果\s+基线 RMS/);
+  assert.match(result.stdout, /45\/45 个事件窗口检测到瞬变/);
+  assert.match(result.stdout, /事件\s+波形起点→目标落点\s+结果\s+基线 RMS/);
   const evidence = JSON.parse(readFileSync(reportPath, 'utf8'));
   assert.equal(evidence.events.length, 45); assert.ok(evidence.events.every(event => event.hit && event.evidence.method.includes('50.000ms')));
 });
@@ -109,6 +109,17 @@ test('LRC CLI accepts --lrc and --offset and emits a directly usable lyrics arra
   const result = spawnSync(process.execPath, [resolveSkill('scripts/lrc.mjs'), '--lrc', source, '--offset', '12', '--duration', '20', '--out', out], { encoding: 'utf8', windowsHide: true });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(readFileSync(out, 'utf8')).map(cue => [cue.start, cue.end]), [[13, 14.5], [14.5, 17.5]]);
+});
+
+test('LRC CLI refuses to overwrite its source file', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'lrc-overwrite-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const source = join(dir, 'song.lrc'), original = '[00:01.00]keep this lyric';
+  writeFileSync(source, original);
+  const result = spawnSync(process.execPath, [resolveSkill('scripts/lrc.mjs'), '--lrc', source, '--out', source], { encoding: 'utf8', windowsHide: true });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /alias|overwrite|覆盖/i);
+  assert.equal(readFileSync(source, 'utf8'), original);
 });
 
 test('draft 默认不烧水印，显式 draftMark:true 才加，状态仍进资产清单', async () => {
@@ -173,6 +184,17 @@ test('narrative-12 CLI reads lyrics.json and writes a 12-scene skeleton', t => {
   assert.equal(result.status, 0, result.stderr);
   const storyboard = JSON.parse(readFileSync(outputPath, 'utf8'));
   assert.equal(storyboard.scenes.length, 12); assert.equal(storyboard.lyrics[0].id, 'l1');
+});
+
+test('narrative-12 CLI refuses to overwrite its lyric input', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'storyboard-overwrite-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lyricsPath = join(dir, 'lyrics.json'), original = JSON.stringify([{ id: 'l1', start: 1, end: 3, text: 'preserve' }]);
+  writeFileSync(lyricsPath, original);
+  const result = spawnSync(process.execPath, [resolveSkill('scripts/new-storyboard.mjs'), '--preset', 'narrative-12', '--duration', '90', '--lyrics', lyricsPath, '--out', lyricsPath], { encoding: 'utf8', windowsHide: true });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /alias|overwrite|覆盖/i);
+  assert.equal(readFileSync(lyricsPath, 'utf8'), original);
 });
 
 test('composition QA reports low subject area, low luminance, and dominant-color warnings', async () => {

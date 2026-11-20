@@ -47,6 +47,7 @@ import statistics
 import subprocess
 import sys
 from pathlib import Path
+from path_safety import assert_no_path_aliases
 
 TOLERANCE_MS = 80.0      # 卡点容差：一拍 144BPM ≈ 417ms，80ms 是"看得出对得上"的上限
 EPS = 1e-9
@@ -564,6 +565,13 @@ def main(argv=None):
     parser.add_argument("--json", dest="json_path", help="另存机器可读报告")
     parser.add_argument("--quiet", action="store_true", help="只输出汇总行")
     args = parser.parse_args(argv)
+    try:
+        assert_no_path_aliases(
+            inputs=[args.storyboard, args.analysis, args.video],
+            outputs=[args.json_path],
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc))
 
     try:
         storyboard = load_json(args.storyboard)
