@@ -138,6 +138,15 @@ test('刚好贴边、边界相接不算重叠，正好等于安全界也不算�
   assert.match(child.stdout, /无问题/);
 });
 
+test('JSON 报告拒绝覆盖分镜输入', opts, t => {
+  const { storyboardPath, run } = fixture(t);
+  const original = readFileSync(storyboardPath);
+  const child = run('--out', storyboardPath);
+  assert.notEqual(child.status, 0, child.stdout);
+  assert.match(child.stderr, /输出.*输入|覆盖/);
+  assert.deepEqual(readFileSync(storyboardPath), original);
+});
+
 test('完全重合单独报「完全重合」，JSON 里 kind 是 coincide', opts, t => {
   const { run } = fixture(t);
   const child = run('--hud', '档案:100,100,300,300', '--hud', '档案副本:100,100,300,300', '--json');
@@ -360,7 +369,8 @@ test('不依赖 Pillow / numpy：源码不 import，运行后也不会加载', o
   assert.doesNotMatch(source, /PIL|numpy/);
 
   const code = [
-    'import importlib.util, sys',
+    'import importlib.util, sys, os',
+    'sys.path.insert(0, os.path.dirname(sys.argv[1]))',
     "spec = importlib.util.spec_from_file_location('layout_check_probe', sys.argv[1])",
     'module = importlib.util.module_from_spec(spec)',
     'spec.loader.exec_module(module)',

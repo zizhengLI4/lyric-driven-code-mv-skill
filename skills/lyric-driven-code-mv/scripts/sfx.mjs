@@ -13,8 +13,9 @@
  *   node scripts/sfx.mjs --timeline work/sfx.json --duration 12 --out work/sfx.wav --report work/sfx-report.json
  *
  * timeline 是 JSON 数组：
- *   [{ "at": 1.5, "type": "tick", "gain": 0.5, "pitch": 1.0 }, ...]
- * at 为成片秒；type 见 --list；gain 0–2；pitch 0.5–2。
+ *   [{ "at": 1.29, "hitAt": 1.5, "anchor": "beat", "type": "whoosh", "gain": 0.5 }]
+ * at 为波形起点，hitAt 为预期听感落点；二者都是成片秒。旧条目仍只需 at/type。
+ * type 见 --list；gain 0–2；pitch 0.5–2。
  * 输出 44.1kHz / 16-bit / 立体声 WAV，长度严格等于 --duration。
  * 越界事件被裁掉并记入 report，不抛错。
  */
@@ -22,6 +23,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertNoPathAliases } from './path-safety.mjs';
 
 export const SAMPLE_RATE = 44100;
 
@@ -128,7 +130,7 @@ export function listSfx() {
 
 /**
  * 从分镜收集音效事件：project.sfx[] 与每个 scene.sfx[] 合并，按 at 排序。
- * 分镜里写 sfx 而不是另开时间轴，才能和同一镜的画面事件一起被校验。
+ * 分镜里写 sfx 而不是另开时间轴，校验与报告共用成片秒和同一组锚点字段。
  */
 export function collectSfx(storyboard) {
   const out = [];
@@ -183,6 +185,11 @@ export function renderTimeline(timeline, duration, { rate = SAMPLE_RATE } = {}) 
     const at = Number(event.at);
     if (!Number.isFinite(at) || at < 0) throw new Error(`timeline[${index}].at 必须是非负数字：${event.at}`);
     const type = String(event.type || '');
+    const anchor = event.anchor;
+    if (anchor !== undefined && !['beat', 'visual', 'free'].includes(anchor)) throw new Error(`timeline[${index}].anchor 须为 beat、visual 或 free`);
+    if (event.hitAt !== undefined && (!Number.isFinite(event.hitAt) || event.hitAt < at || event.hitAt >= duration)) throw new Error(`timeline[${index}].hitAt 须位于 [at,duration)`);
+    if (anchor === 'beat' && event.hitAt === undefined) throw new Error(`timeline[${index}].hitAt 是 anchor:"beat" 的必填字段`);
+    if (anchor === 'visual' && event.hitAt === undefined) throw new Error(`timeline[${index}].hitAt 是 anchor:"visual" 的必填字段`);
     const pcm = renderSfx(type, { gain: event.gain ?? 1, pitch: event.pitch ?? 1, rate });
     const start = Math.round(at * rate);
 
@@ -194,7 +201,12 @@ export function renderTimeline(timeline, duration, { rate = SAMPLE_RATE } = {}) 
       mix[frame * 2 + 1] += pcm[i + 1];
       written += 1;
     }
-    placed.push({ index, at, type, startFrame: start, frames: written, gain: event.gain ?? 1 });
+    const hitAt = Number.isFinite(event.hitAt) ? event.hitAt : at;
+    placed.push({
+      index, at, type, startFrame: start, frames: written, gain: event.gain ?? 1,
+      ...(event.hitAt !== undefined ? { hitAt, hitFrame: Math.round(hitAt * rate) } : {}),
+      ...(anchor !== undefined ? { anchor } : {}),
+    });
   }
 
   let peak = 0;
@@ -258,7 +270,7 @@ function flag(name, fallback = null) {
   return i >= 0 ? process.argv[i + 1] : fallback;
 }
 
-function main() {
+async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes('--list')) {
     console.log('可用音效：');
@@ -288,8 +300,9 @@ function main() {
     const duration = Number(flag('--duration', String(fallbackDuration)));
     if (!(duration > 0)) { console.error('必须给 --duration（秒），或分镜里写 project.duration'); return 2; }
     const { pcm, report } = renderTimeline(timeline, duration);
-    writeFileSync(out, encodeWav(pcm));
     const reportPath = flag('--report');
+    assertNoPathAliases({ inputs: [timelinePath, storyboardPath].filter(Boolean), outputs: [out, reportPath].filter(Boolean) });
+    writeFileSync(out, encodeWav(pcm));
     if (reportPath) writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
     const tail = report.clipped.length ? `｜裁掉 ${report.clipped.length} 个越界事件` : '';
     console.log(`音效轨 ${out}｜${report.events} 个事件 / 每分钟 ${report.perMinute} 个｜峰值 ${report.peakBeforeNorm}${tail}`);
@@ -298,6 +311,7 @@ function main() {
 
   const type = argv.find((a) => !a.startsWith('--'));
   if (!type) { console.error('缺少音效类型，用 --list 查看'); return 2; }
+  assertNoPathAliases({ outputs: [out] });
   const pcm = renderSfx(type, { gain: Number(flag('--gain', '1')), pitch: Number(flag('--pitch', '1')) });
   writeFileSync(out, encodeWav(pcm));
   console.log(`已生成 ${out}（${type}，${(pcm.length / 2 / SAMPLE_RATE).toFixed(3)}s）`);
@@ -307,10 +321,10 @@ function main() {
 const entry = process.argv[1];
 const isMain = entry ? resolve(entry) === resolve(fileURLToPath(import.meta.url)) : false;
 if (isMain) {
-  try {
-    process.exit(main());
-  } catch (error) {
+  main().then(code => {
+    process.exitCode = code;
+  }).catch(error => {
     console.error('失败：' + error.message);
-    process.exit(1);
-  }
+    process.exitCode = 1;
+  });
 }

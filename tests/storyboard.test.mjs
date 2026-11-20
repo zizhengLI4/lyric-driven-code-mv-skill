@@ -377,6 +377,25 @@ test('the caller can choose a beat tolerance and offsets choose the closest beat
   assert.match(warningsAt(analyzeStoryboard(data, { beatToleranceMs: 30 }), 'scenes[0].events[0].at')[0], /offsetMs=-40(?:\D|$)/);
 });
 
+test('project beat tolerance setting must be a nonnegative finite number', () => {
+  const data = validStoryboard();
+  for (const value of [-1, NaN, Infinity, '80']) {
+    data.project.settings = { beatToleranceMs: value };
+    assert.ok(analyzeStoryboard(data).errors.some(message => message.startsWith('project.settings.beatToleranceMs:')));
+  }
+  data.project.settings = null;
+  assert.ok(analyzeStoryboard(data).errors.some(message => message.startsWith('project.settings:')));
+});
+
+test('CLI uses the storyboard beat tolerance setting', t => {
+  const data = validStoryboard();
+  data.project.settings = { beatToleranceMs: 150 };
+  data.scenes[0].events = [{ at: 4.1, action: 'raise-gift', sync: 'beat' }];
+  const result = runCli([temporaryJson(t, JSON.stringify(data))]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stdout + result.stderr, /events\[0\]\.at.*offsetMs=100/);
+});
+
 test('an empty beat grid warns only on explicitly beat-synced events', () => {
   const data = validStoryboard();
   data.music.beats = [];

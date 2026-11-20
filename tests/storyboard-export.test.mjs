@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, readFile, rm, mkdir, readdir, rename } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, rm, mkdir, readdir, rename, symlink, link } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -39,6 +39,74 @@ const setup = async (t, data = fixture()) => {
   const path = join(root, 'storyboard.json'); await writeFile(path, JSON.stringify(data));
   return { root, path, data };
 };
+
+test('导出媒体与旁车不能覆盖分镜或输入音轨', async t => {
+  const exporter = await import(new URL('export.mjs', base));
+  const { root, path, data } = await setup(t);
+  const mp4Storyboard = join(root, 'project.mp4');
+  await writeFile(mp4Storyboard, JSON.stringify(data));
+  await assert.rejects(() => exporter.exportVideo(exporter.parseArgs(['--storyboard', mp4Storyboard, '--out', mp4Storyboard])), /输出.*输入|覆盖/);
+
+  const hardLinkStoryboard = join(root, 'hard-link-storyboard.mp4');
+  await writeFile(hardLinkStoryboard, JSON.stringify(data));
+  const hardLinkOutput = join(root, 'hard-link-output.mp4');
+  await link(hardLinkStoryboard, hardLinkOutput);
+  await assert.rejects(() => exporter.exportVideo(exporter.parseArgs(['--storyboard', hardLinkStoryboard, '--out', hardLinkOutput])), /冲突|覆盖/);
+  assert.deepEqual(JSON.parse(await readFile(hardLinkStoryboard, 'utf8')), data);
+
+  const aliasedDeliverables = join(root, 'aliased-deliverables.mp4');
+  await writeFile(aliasedDeliverables, 'old mp4 placeholder');
+  await link(aliasedDeliverables, aliasedDeliverables + '.assets.json');
+  await assert.rejects(() => exporter.exportVideo(exporter.parseArgs(['--storyboard', path, '--out', aliasedDeliverables])), /多个输出.*同一|冲突/);
+
+  const sidecarStoryboard = join(root, 'delivery.mp4.assets.json');
+  await writeFile(sidecarStoryboard, JSON.stringify(data));
+  await assert.rejects(() => exporter.exportVideo(exporter.parseArgs(['--storyboard', sidecarStoryboard, '--out', join(root, 'delivery.mp4')])), /输出.*输入|覆盖/);
+
+  if (process.platform === 'win32') {
+    const directoryAlias = join(root, 'output-directory-alias');
+    await symlink(root, directoryAlias, 'junction');
+    const aliasedStoryboard = join(root, 'aliased-storyboard.mp4');
+    await writeFile(aliasedStoryboard, JSON.stringify(data));
+    const outputThroughAlias = join(directoryAlias, 'aliased-storyboard.mp4');
+    await assert.rejects(() => exporter.exportVideo(exporter.parseArgs(['--storyboard', aliasedStoryboard, '--out', outputThroughAlias])), /冲突|覆盖/);
+    assert.deepEqual(JSON.parse(await readFile(aliasedStoryboard, 'utf8')), data);
+  }
+
+  const aliasPath = join(root, 'storyboard-alias.mp4');
+  try {
+    await symlink(path, aliasPath);
+    const storyboardBytes = await readFile(path);
+    await assert.rejects(() => exporter.exportVideo(exporter.parseArgs(['--storyboard', path, '--out', aliasPath])), /冲突|覆盖/);
+    assert.deepEqual(await readFile(path), storyboardBytes);
+  } catch (error) {
+    if (!['EPERM', 'EACCES', 'ENOSYS'].includes(error.code)) throw error;
+    t.diagnostic('当前系统不允许创建文件软链接，跳过软链接别名分支');
+  }
+
+  const framesDir = join(root, 'frames');
+  await mkdir(framesDir);
+  const framesAudioPath = join(framesDir, 'audio.wav');
+  const framesAudio = Buffer.from('audio inside frames directory');
+  await writeFile(framesAudioPath, framesAudio);
+  data.music.status = 'draft';
+  data.project.audio.path = 'frames/audio.wav';
+  data.project.audio.timebase = 'clip';
+  await writeFile(path, JSON.stringify(data));
+  await assert.rejects(() => exporter.exportVideo(exporter.parseArgs(['--storyboard', path, '--frames-dir', framesDir, '--frames-only'])), /冲突|覆盖/);
+  assert.deepEqual(await readFile(framesAudioPath), framesAudio);
+
+  data.music.status = 'draft';
+  data.project.audio.path = 'frame.png';
+  data.project.audio.timebase = 'clip';
+  const audio = Buffer.from('original audio bytes');
+  const audioPath = join(root, 'frame.png');
+  await writeFile(audioPath, audio);
+  await writeFile(path, JSON.stringify(data));
+  const frameConfig = exporter.parseArgs(['--storyboard', path, '--frame-time', '0', '--frame-out', audioPath]);
+  await assert.rejects(() => exporter.exportFrame(frameConfig, () => {}), /输出.*输入|覆盖/);
+  assert.deepEqual(await readFile(audioPath), audio);
+});
 
 test('音轨覆盖只能重定位同一素材，演示记录不能冒充真实歌曲', async t => {
   const exporter = await import(new URL('export.mjs', base));

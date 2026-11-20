@@ -232,6 +232,7 @@ export async function writeSyncReport(options, fileOps = {}) {
   const storyboard = resolve(options.storyboard), analysis = resolve(options.analysis), out = resolve(options.out);
   if (extname(out).toLowerCase() !== '.svg') fail('--out 须使用 .svg 扩展名');
   const jsonOut = out.slice(0, -4) + '.json';
+  if (await sameFile(out, jsonOut)) fail('SVG 与 JSON 输出路径指向同一文件');
   for (const output of [out, jsonOut]) for (const input of [storyboard, analysis]) if (await sameFile(output, input)) fail('SVG 或相邻 JSON 输出不能覆盖任何输入');
   const [sb, an] = await Promise.all([loadJSON(storyboard), loadJSON(analysis)]);
   const report = buildSyncReport(sb.data, an.data);

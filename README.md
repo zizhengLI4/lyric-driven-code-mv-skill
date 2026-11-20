@@ -46,6 +46,13 @@
 
 参考视频可借鉴“剪影清楚、姿态有性格、细节受控”等原则，不照搬具体角色设计。完整规范见 [像素世界与演出](skills/lyric-driven-code-mv/references/pixel-game-visuals.md#角色差异度与完成度门槛)。
 
+### 逐句歌词变成可读画面
+
+代码控制不是“先画一个大场景，再把歌词放上去”，而是让每句都有可辨的主体、动作和结果；相邻几句可以留在同一地点，但镜头焦点与事件必须推进。制作时先用角色/物件模块保持身份，再用统一时间线驱动逐帧画面；先审关键帧和无字幕版，确认物件与动作读得懂后再细化光影与材质。
+
+- [代码控制视觉提示法](skills/lyric-driven-code-mv/references/code-directed-visuals.md)：分阶段提示词、逐句视觉账本、关键帧→代码实现→无字幕验收模板。
+- [四场景逐句演示（带字幕说明）](skills/lyric-driven-code-mv/assets/demos/four-cue-scene-change-demo.mp4) · [同一演示（无字幕）](skills/lyric-driven-code-mv/assets/demos/four-cue-scene-change-no-captions.mp4) · [接触表](skills/lyric-driven-code-mv/assets/demos/four-scene-contact.png)。它使用原创示例文案和代码绘制，静音，不对应任何真实歌曲；用于检查每句的视觉变化，而非展示完整成片质感。
+
 ### 适用边界
 
 本项目面向**歌词驱动的角色/场景叙事和代码动画 MV**。如果只需要逐句显示歌词、K 歌字幕或纯文字卡点，不需要角色行动和故事画面，请改用更适合歌词字幕、素材蒙太奇和纯文字音乐短片的 `music-to-video` Skill。
@@ -110,7 +117,7 @@
 - **点阵标题牌**：`pixel-font.py` 把数字与字母烘成 6×8 点阵（图集 PNG + 点阵 JSON），中文仍用系统字体，混排接近参考片的标题牌质感。
 - **最小渲染器**：`minimal-renderer.py` 用 Pillow 与 FFmpeg 生成占位画面，检查标题牌、数值 HUD、字幕和版面位置；它不绘制完整场景，不是成片渲染器。正式画面请使用 starter 或现有视频工程。
 - **装置模板库**：`assets/devices/` 五个可直接粘的骨架（私信、读档、清单、结算、双轴滑块），各带三条外壳规则、`scene.hud[]` 与 4–5 个带数值事件；字段映射见 [装置模板](skills/lyric-driven-code-mv/references/device-templates.md)。
-- **音效合成**：`scripts/sfx.mjs` 用振荡器与确定性噪声合成八种音效（tick / type / click / whoosh / confirm / error / riser / chime），长度严格等于 `project.duration`，首尾自动淡入淡出；`project.sfx[]` 与 `scene.sfx[]` 由校验器检查类型、时间与增益。两层对齐关系见 [音效层与卡点](skills/lyric-driven-code-mv/references/sfx-and-beat.md)。
+- **音效合成**：`scripts/sfx.mjs` 用振荡器与确定性噪声合成八种音效（tick / type / click / whoosh / confirm / error / riser / chime），长度严格等于 `project.duration`，首尾自动淡入淡出；`project.sfx[]` 与 `scene.sfx[]` 由校验器检查类型、时间、增益、`hitAt` 与 visual/beat/free 锚点。两层对齐关系见 [音效层与卡点](skills/lyric-driven-code-mv/references/sfx-and-beat.md)。
 - **音轨追踪与单帧检查**：音频重定位核对同一素材，导出保存实际音轨哈希与署名记录；可先导出某个时点的世界层PNG，再检查正式成片字幕。
 - **两种导出方式**：管道直出适合快速验证；PNG 落盘与恢复适合保留渲染进度。
 - **画面验收**：通过接触表查看整体叙事，再检查每镜和转场的关键帧。
@@ -204,9 +211,9 @@ cut-to-beat offset median 250ms, max 500ms, within 80ms: 1/2
 
 `within 80ms` 比例高说明切点大致落在拍上；median 偏大说明整段错位，该回去改时窗，而不是改画面。
 
-**⑤ 叠音效层：画面踩拍，音效跟画面**
+**⑤ 叠音效层：按事件选择同步锚点**
 
-这条容易被弄反。对着参考片量过：一条 209 秒的数据可视化叙事片里检出 218 个宽带瞬变（每秒约 1 个），但只有 38% 落在 80 ms 拍点容差内，中位偏离 141 ms。也就是说——**画面整齐落在拍上，音效密密麻麻跟着画面，音效本身并不踩拍**。音效再踩一次，同一拍会被强调两遍，听感发木。
+不同音效可以服务画面动作、音乐重拍或自由氛围；长 whoosh/riser 可以先起声，再让主体攻击或峰值落点。参考作品里测到的瞬变分布只能描述那支作品，不能推出“音效不该踩拍”或“所有音效都该踩拍”。本 Skill 为每条音效明确区分波形起点 `at`、目标落点 `hitAt` 与锚点 `anchor`。
 
 音效写进分镜，和画面事件同层，才能被同一份校验器检查：
 
@@ -214,7 +221,7 @@ cut-to-beat offset median 250ms, max 500ms, within 80ms: 1/2
 "project": { "sfx": [{ "at": 0, "type": "riser", "gain": 0.40 }] },
 "scenes": [{
   "events": [{ "at": 3.0, "action": "数字跳到 42", "sync": "beat" }],
-  "sfx":    [{ "at": 3.0, "type": "tick", "gain": 0.60 }]
+  "sfx":    [{ "at": 3.0, "hitAt": 3.0, "anchor": "visual", "type": "tick", "gain": 0.60 }]
 }]
 ```
 
@@ -230,7 +237,15 @@ node skills/lyric-driven-code-mv/scripts/sfx.mjs --from-storyboard work/storyboa
 ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1 0.85:normalize=0,alimiter=limit=0.95" -c:v copy -c:a aac -b:a 192k work/final.mp4
 ```
 
-`--sfx` 默认权重 0.85，`--sfx-gain 0.6` 可调；分镜里一个 sfx 都没写时它直接报错，不会悄悄漏掉音效。八种音效全是代码合成的（tick / type / click / whoosh / confirm / error / riser / chime），没有采样素材也就没有授权问题。实测 12 秒示范片 9 个事件：音效轨长度严格 12.000000 s，逐事件对比「只有音乐」与「音乐+音效」9/9 命中——事件前 100 ms 差值 0.0000，事件窗口内 0.024，事件后 0.0001，证明起音确实落在写的那一刻。
+`--sfx` 默认权重 0.85，`--sfx-gain 0.6` 可调；分镜里一个 sfx 都没写时它直接报错，不会悄悄漏掉音效。八种音效全是代码合成的（tick / type / click / whoosh / confirm / error / riser / chime），没有采样素材也就没有授权问题。
+
+验证器要如实解释：只给混音轨时，事件附近 RMS 上升只能说明观察到瞬变，纯 BGM 鼓点也可能触发，**不能证明来源是 SFX**。如需归因候选，额外提供完全对齐的 BGM-only 无损参考轨：
+
+```powershell
+node skills/lyric-driven-code-mv/scripts/verify-sfx.mjs --audio work/mixed.wav --reference-audio work/music-only.wav --storyboard work/storyboard.json --window-ms 50 --out work/sfx-evidence.json
+```
+
+同路径差分也只是候选证据；最终仍须试听，并检查最终有损编码。`9/9` 表示九个事件窗口都观察到瞬变，不等同于九个 SFX 均已完成因果归因或峰值卡点验证。
 
 **能证明什么、不能证明什么**
 

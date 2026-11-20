@@ -2,6 +2,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { assertNoPathAliases } from './path-safety.mjs';
 
 const timestamp = (minutes, seconds, fraction = '') => {
   const value = Number(minutes) * 60 + Number(seconds) + (fraction ? Number(`0.${fraction}`) : 0);
@@ -70,7 +71,11 @@ async function main(argv) {
   }
   const lyrics = parseLrc(source, args);
   const output = `${JSON.stringify(lyrics, null, 2)}\n`;
-  if (args.out) await writeFile(resolve(args.out), output, 'utf8');
+  if (args.out) {
+    const outputPath = resolve(args.out);
+    assertNoPathAliases({ inputs: [args.lrc, args.storyboard, args.scenes].filter(Boolean), outputs: [outputPath] });
+    await writeFile(outputPath, output, 'utf8');
+  }
   else process.stdout.write(output);
 }
 

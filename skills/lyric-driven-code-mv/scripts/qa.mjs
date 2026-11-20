@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { assertNoPathAliases } from './path-safety.mjs';
 
 const positive = (value, name) => {
   if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} 必须为正有限数`);
@@ -61,7 +62,9 @@ export function measureComposition(frame, { subjectMask } = {}) {
     const key = `${data[offset]},${data[offset + 1]},${data[offset + 2]}`;
     colors.set(key, (colors.get(key) ?? 0) + 1);
   }
-  const dominantColorFraction = visible ? Math.max(...colors.values()) / visible : 0;
+  let dominantColorCount = 0;
+  for (const count of colors.values()) dominantColorCount = Math.max(dominantColorCount, count);
+  const dominantColorFraction = visible ? dominantColorCount / visible : 0;
   let subjectPixels = 0, subjectMethod = 'border-color proxy';
   if (subjectMask !== undefined) {
     if (!(subjectMask instanceof Uint8Array || subjectMask instanceof Uint8ClampedArray || Array.isArray(subjectMask)) || subjectMask.length !== pixels) throw new Error('subjectMask 长度须等于 width×height');
@@ -210,6 +213,10 @@ async function main(args) {
     if (Object.hasOwn(opts, key)) throw new Error(`重复参数：${key}`);
     opts[key] = args[i + 1];
   }
+  assertNoPathAliases({
+    inputs: [modulePath, opts['--storyboard']].filter(Boolean),
+    outputs: [opts['--out']].filter(Boolean),
+  });
   const module = await import(pathToFileURL(resolve(modulePath)).href);
   let failed = false;
   let operationError;

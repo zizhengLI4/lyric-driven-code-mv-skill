@@ -20,6 +20,7 @@ import os
 import sys
 
 from PIL import Image, ImageDraw, ImageFont
+from path_safety import assert_no_path_aliases
 
 FONT_CANDIDATES = [
     "C:/Windows/Fonts/consola.ttf",
@@ -154,6 +155,13 @@ def main(argv=None):
     except ValueError:
         raise SystemExit("--cell 需要写成 5x7 这种形式")
     font_path = args.font or first_existing(FONT_CANDIDATES, "英文点阵")
+    try:
+        assert_no_path_aliases(
+            inputs=[font_path],
+            outputs=[args.out, args.json_path, args.sample],
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc))
 
     glyphs = build(args.charset, font_path, cell_w, cell_h)
     write_atlas(glyphs, cell_w, cell_h, args.out, pixel=args.pixel)

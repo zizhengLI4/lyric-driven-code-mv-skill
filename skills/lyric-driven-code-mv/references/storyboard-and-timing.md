@@ -66,7 +66,8 @@ starter 还包含一层演出缩放：JSON 路线在调用 `SCENE_RENDERERS[scen
 | 字段 | 内容 |
 |---|---|
 | `schemaVersion`, `timebase` | `1`、`"clip"` |
-| `project` | `fps,duration,sourceOffset,width,height,virtualWidth,virtualHeight,seed,audio` |
+| `project` | `fps,duration,sourceOffset,width,height,virtualWidth,virtualHeight,seed,settings?,audio,sfx?` |
+| `project.settings` | `{beatToleranceMs?}`；默认 80 ms，须为非负有限数，分镜 CLI 会将其传给节拍校验器 |
 | `project.audio` | `path,timebase,provenance?,license,credit,url?,licenseUrl?,use`，授权说明见音频参考 |
 | `device?` | `{id,type,name,purpose}`；先描述承载叙事的界面、系统、时间轴、视角或材质舞台，再决定场景画法 |
 | `chapters?` | 至少一个且连续覆盖 `[0,duration)` 的 `{id,start,end,title,meaning}`；用于标题牌、章节牌或关系阶段，不替代 `scenes[]` |
@@ -81,6 +82,7 @@ starter 还包含一层演出缩放：JSON 路线在调用 `SCENE_RENDERERS[scen
 | `scene.hud[]` | `{id,type,label,value?,min?,max?,meaning}`；`value` 若提供为非空字符串或有限数，`bar` 要求数值落在 `min..max` 内；类型可为 `counter/bar/heart/status/clock/badge/log/checklist/axis/level/score/banner`，负值、归零、损坏和失败均可作为语义结果 |
 | `scene.actors[]` | `{id,costume}` 引用根人物表 |
 | `scene.events[]` | `{at,action,hud?,sync?,lyricIds?,meaning?,support?}`；`at` 为成片秒，位于镜头内且升序 |
+| `project.sfx[]`, `scene.sfx[]` | `{at,type,gain?,pitch?,hitAt?,anchor?}`；`at` 是波形起点；`anchor` 可为 `visual/beat/free`，visual/beat 锚点须写 `hitAt`；visual 仅在镜头内绑定事件 |
 | `scene.exit` | `{type,dur,origin?,target?}`；类型为 cut/dissolve/ripple/water |
 
 主场景连续覆盖 `[0,duration)`，不重叠、不留洞。角色装束明确指定；道具拥有、消耗与保留另记状态并核对。`scene.lyricIds` 引用与镜头相交的歌词；留白镜头可为空。
@@ -106,7 +108,7 @@ starter 当前实现通用分镜规范的执行子集：末镜仅支持 `exit:{t
 ## 语义提示的边界
 
 - 句子被镜头边界切开会提示；有意拆镜时写 `allowSceneSplit:true` 与具体 `splitReason`，字幕层保持连续。不能由提示直接推断叙事一定错误。
-- 仅 `event.sync:"beat"` 检查最近 `beats[]` 的距离，默认容差 80 ms。歌词起句或缓慢动作不必都踩拍；节拍表为空时提示证据不足。调用 `analyzeStoryboard` 的 `beatToleranceMs` 参数可调整容差。
+- `event.sync:"beat"` 对照最近 `beats[]`；`scene.sfx[].anchor:"beat"` 以 `hitAt` 对照同一节拍网格，波形起点 `at` 可提前。默认容差 80 ms，可由 `project.settings.beatToleranceMs` 调整；`visual` 锚点须对应同镜头、同一时点的 `scene.events[]`。歌词起句或缓慢动作不必都踩拍，节拍表为空时提示证据不足。
 - HUD 可由事件/镜头的 `lyricIds` 支撑，间奏可由 `event.meaning` 或 `support` 解释因果。`event.lyricIds` 必须与本镜相交，并由 `scene.lyricIds` 支持或在事件 `at` 时有效；预示动作可添加镜头级引用。引用可定位不等于含义已经正确。
 - 普通模式返回提示；`--strict` 将全部警告升为失败。这是结构检查的退出码策略，草稿可以通过，状态仍为 `draft`。`--delivery` 检查许可记录与音乐证据，`audio.use` 为 publish/public/commercial 时也启用同样检查；两者通过均不证明许可有效或实际音画已经核对。
 

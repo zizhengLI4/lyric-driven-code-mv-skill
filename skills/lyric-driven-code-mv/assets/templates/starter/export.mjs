@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, mkdtemp, readFile, writeFile, rename, readdir, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile, rename, readdir, rm, stat, realpath } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, resolve, join, basename, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -148,13 +148,14 @@ const frameOptions = c => ({ seed: c.seed, ...(c.timeline ? { timeline: c.timeli
 export async function exportFrame(c, log = console.log) {
   c = await loadProject(c);
   if (!c.frameOut || !Number.isFinite(c.frameTime) || c.frameTime < 0 || c.frameTime >= c.duration) throw new Error('--frame-time须位于[0,duration)，并提供--frame-out');
+  await assertNoOutputInputAliases(c, 'frame');
   await mkdir(dirname(c.frameOut), { recursive: true });
   await atomicWrite(c.frameOut, encodePNG(renderFrame(c.frameTime, frameOptions(c))));
   log(`世界层单帧：${c.frameOut}（${WIDTH}×${HEIGHT}，${c.frameTime}成片秒；不含ASS字幕）`);
 }
 
 async function renderConfig(c) {
-  const sourceHash = digest(Buffer.concat(await Promise.all(['frame.mjs', 'timeline.mjs', 'png.mjs', 'export.mjs'].map(file => readFile(join(here, file))))));
+  const sourceHash = digest(Buffer.concat(await Promise.all(['frame-core.mjs', 'frame.mjs', 'timeline.mjs', 'png.mjs', 'export.mjs'].map(file => readFile(join(here, file))))));
   const config = { version: 2, duration: c.duration ?? DURATION, fps: c.fps, frameWidth: WIDTH, frameHeight: HEIGHT, outputWidth: c.width, outputHeight: c.height, seed: c.seed, font: c.font, sourceHash, storyboardHash: c.storyboardHash ?? null, audioHash: c.audioHash ?? null, audioStart: c.audioStart ?? 0 };
   return { config, fingerprint: digest(JSON.stringify(config)), frameCount: Math.ceil(config.duration * c.fps - 1e-9), frames: {} };
 }
@@ -300,6 +301,77 @@ async function fileTarget(path) {
   catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
 
+async function canonicalPath(path) {
+  let current = resolve(path);
+  const missingParts = [];
+  while (true) {
+    try {
+      const existingPath = await realpath(current);
+      return resolve(existingPath, ...missingParts.reverse());
+    } catch (error) {
+      if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error;
+      const parent = dirname(current);
+      if (parent === current) return resolve(current, ...missingParts.reverse());
+      missingParts.push(basename(current));
+      current = parent;
+    }
+  }
+}
+
+const pathKey = path => process.platform === 'win32' ? path.toLowerCase() : path;
+
+async function sameFile(first, second) {
+  if (pathKey(resolve(first)) === pathKey(resolve(second))) return true;
+  try {
+    const [a, b] = await Promise.all([stat(first), stat(second)]);
+    return a.isFile() && b.isFile() && a.dev === b.dev && a.ino === b.ino;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+async function assertNoOutputInputAliases(c, mode = 'video') {
+  const inputs = [c.storyboard, c.audioPath, c.sfxScript].filter(Boolean);
+  const outputs = [];
+  if (mode === 'frame') outputs.push(c.frameOut);
+  else {
+    if (!c.framesOnly) outputs.push(c.out, `${c.out}.assets.json`);
+    if (c.framesDir) {
+      outputs.push(...['render-config.json', 'audio.wav', 'audio-mixed.wav', 'sfx.wav', 'subtitles.ass', 'asset-manifest.json'].map(name => join(c.framesDir, name)));
+      const framesDirectory = await canonicalPath(c.framesDir);
+      const frameCount = Math.ceil((c.duration ?? DURATION) * c.fps - 1e-9);
+      for (const input of inputs) {
+        const canonicalInput = await canonicalPath(input);
+        if (pathKey(dirname(canonicalInput)) !== pathKey(framesDirectory)) continue;
+        const match = /^frame-(\d{6})\.png$/i.exec(basename(canonicalInput));
+        if (match && Number(match[1]) < frameCount) outputs.push(join(c.framesDir, basename(canonicalInput)));
+      }
+    }
+  }
+  const [canonicalInputs, canonicalOutputs] = await Promise.all([
+    Promise.all(inputs.map(canonicalPath)),
+    Promise.all(outputs.filter(Boolean).map(canonicalPath)),
+  ]);
+  const inputByPath = new Map(canonicalInputs.map((path, index) => [pathKey(path), inputs[index]]));
+  const outputByPath = new Map();
+  for (let i = 0; i < canonicalOutputs.length; i++) {
+    const outputKey = pathKey(canonicalOutputs[i]);
+    const previousOutput = outputByPath.get(outputKey);
+    if (previousOutput || (await Promise.all(outputs.filter(Boolean).slice(0, i).map(path => sameFile(path, outputs.filter(Boolean)[i])))).some(Boolean)) {
+      throw new Error(`多个输出路径指向同一文件：${previousOutput ?? outputs.filter(Boolean)[i]} ↔ ${outputs.filter(Boolean)[i]}`);
+    }
+    outputByPath.set(outputKey, outputs.filter(Boolean)[i]);
+    let input = inputByPath.get(outputKey);
+    if (!input) {
+      for (const candidate of inputs) {
+        if (await sameFile(candidate, outputs.filter(Boolean)[i])) { input = candidate; break; }
+      }
+    }
+    if (input) throw new Error(`输出路径与输入文件冲突，为避免覆盖输入而停止：${outputs.filter(Boolean)[i]} ↔ ${input}`);
+  }
+}
+
 /** 两个文件成对更新；失败时还原已备份交付，回滚失败保留备份供恢复。 */
 export async function publishOutput(temporaryOut, out, records, move = rename) {
   const targets = [out, `${out}.assets.json`];
@@ -394,6 +466,7 @@ export async function verifyOutput(c, path) {
 
 export async function exportVideo(c, log = console.log) {
   c = await loadProject(c);
+  await assertNoOutputInputAliases(c);
   if (!c.framesOnly) await Promise.all([c.out, `${c.out}.assets.json`].map(fileTarget));
   preflight(c);
   if (c.audioPath) {

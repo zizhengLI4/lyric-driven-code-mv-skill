@@ -6,7 +6,7 @@ import { inflateSync } from 'node:zlib';
 import { join, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { requireMediaTools } from './media-tools.mjs';
 
 const base = new URL('../skills/lyric-driven-code-mv/assets/templates/starter/', import.meta.url);
@@ -175,6 +175,37 @@ test('minimal-renderer rejects default writes inside the skill and accepts proje
   const allowed = spawnSync(python, ['-X', 'utf8', renderer, storyboard, '--probe', '0', '--out', projectWork], { cwd: isolatedSkill, encoding: 'utf8', windowsHide: true });
   assert.equal(allowed.status, 0, allowed.stderr);
   assert.equal(readdirSync(projectWork).length, 1);
+});
+
+test('minimal-renderer refuses to overwrite a storyboard with its MP4 output', t => {
+  const temp = mkdtempSync(join(tmpdir(), 'minimal-renderer-alias-'));
+  t.after(() => rmSync(temp, { recursive: true, force: true }));
+  const isolatedSkill = join(temp, 'lyric-driven-code-mv');
+  cpSync(fileURLToPath(new URL('../skills/lyric-driven-code-mv/', import.meta.url)), isolatedSkill, { recursive: true });
+  const storyboard = join(temp, 'storyboard.json');
+  const original = readFileSync(fileURLToPath(new URL('../skills/lyric-driven-code-mv/assets/storyboard-example.json', import.meta.url)));
+  writeFileSync(storyboard, original);
+  const renderer = join(isolatedSkill, 'scripts/minimal-renderer.py');
+  const child = spawnSync(process.env.PYTHON || 'python', ['-X', 'utf8', renderer, storyboard, '--out', storyboard], { cwd: isolatedSkill, encoding: 'utf8', windowsHide: true });
+  assert.notEqual(child.status, 0, child.stdout);
+  assert.match(child.stderr, /输出路径与输入文件冲突/);
+  assert.deepEqual(readFileSync(storyboard), original);
+});
+
+test('共享 frame-core 变化后拒绝复用旧恢复帧', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'starter-core-hash-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const copiedAssets = join(root, 'assets');
+  mkdirSync(join(copiedAssets, 'templates'), { recursive: true });
+  cpSync(fileURLToPath(new URL('../../frame-core.mjs', base)), join(copiedAssets, 'frame-core.mjs'));
+  const copiedStarter = join(copiedAssets, 'templates/starter');
+  cpSync(fileURLToPath(base), copiedStarter, { recursive: true });
+  const exporter = await import(`${pathToFileURL(join(copiedStarter, 'export.mjs')).href}?core-hash-test`);
+  const directory = join(root, 'frames');
+  const config = exporter.parseArgs(['--frames-dir', directory, '--fps', '1']);
+  await exporter.prepareFrames(config, () => {});
+  await writeFileSync(join(copiedStarter, 'frame-core.mjs'), '\n// changed renderer dependency\n', { flag: 'a' });
+  await assert.rejects(() => exporter.prepareFrames({ ...config, resume: true }, () => {}), /配置/);
 });
 
 test('恢复导出核对配置及每个已存PNG尺寸，拒绝混用和损坏', async t => {

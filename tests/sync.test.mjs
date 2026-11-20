@@ -106,6 +106,23 @@ test('CLI拒绝缺参数、未知选项、非SVG输出', () => {
   for (const args of [[], ['s.json'], ['s.json', 'a.json'], ['s.json', 'a.json', '--out', 'r.json'], ['s.json', 'a.json', '--x', 'r.svg']]) assert.throws(() => parseArgs(args));
 });
 
+test('SVG 与 JSON 输出通过硬链接指向同一文件时拒绝发布', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sync-output-hardlink-'));
+  try {
+    const { storyboard, analysis } = fixture();
+    const sb = join(dir, 'storyboard.json'), an = join(dir, 'analysis.json');
+    const svg = join(dir, 'report.svg'), json = join(dir, 'report.json');
+    writeFileSync(sb, JSON.stringify(storyboard));
+    writeFileSync(an, JSON.stringify(analysis));
+    writeFileSync(svg, 'preserve existing deliverable');
+    linkSync(svg, json);
+    const before = readFileSync(svg);
+    await assert.rejects(writeSyncReport({ storyboard: sb, analysis: an, out: svg }), /输出.*同一文件|同一.*输出/);
+    assert.deepEqual(readFileSync(svg), before);
+    assert.deepEqual(readFileSync(json), before);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('相邻JSON通过硬链接指向输入时也拒绝覆盖', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'sync-alias-'));
   try {

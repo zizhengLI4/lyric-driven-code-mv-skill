@@ -103,7 +103,11 @@ export function analyzeStoryboard(data, options = {}) {
   };
   // 与 scripts/sfx.mjs 的 SFX 表一一对应；tests/sfx.test.mjs 断言两边不漂移。
   const SFX_TYPES = ['chime', 'click', 'confirm', 'error', 'riser', 'tick', 'type', 'whoosh'];
-  const checkSfx = (value, path, limit) => {
+  const SFX_ANCHORS = ['beat', 'visual', 'free'];
+  const sfxBeatAnchors = [];
+  const sfxVisualAnchors = [];
+  const visualEventTimesByScene = new Map();
+  const checkSfx = (value, path, limit, sceneIndex = null) => {
     if (value === undefined) return;
     if (!Array.isArray(value)) {
       fail(path, '若提供，必须为数组');
@@ -113,9 +117,26 @@ export function analyzeStoryboard(data, options = {}) {
       const itemPath = `${path}[${i}]`;
       const item = object(entry, itemPath);
       if (!item) return;
-      if (finite(item.at, `${itemPath}.at`)) {
+      const validAt = finite(item.at, `${itemPath}.at`);
+      if (validAt) {
         if (item.at < 0) fail(`${itemPath}.at`, '必须为非负数');
         else if (limit !== null && item.at >= limit) fail(`${itemPath}.at`, '必须小于 project.duration');
+      }
+      let validHitAt = false;
+      if (item.hitAt !== undefined) {
+        validHitAt = finite(item.hitAt, `${itemPath}.hitAt`);
+        if (validHitAt && validAt && item.hitAt < item.at) fail(`${itemPath}.hitAt`, '听感落点不得早于波形起点 at');
+        if (validHitAt && limit !== null && item.hitAt >= limit) fail(`${itemPath}.hitAt`, '必须小于 project.duration');
+      }
+      if (item.anchor !== undefined && !SFX_ANCHORS.includes(item.anchor)) fail(`${itemPath}.anchor`, `必须为 ${SFX_ANCHORS.join('、')} 之一`);
+      if (item.anchor === 'beat' || item.anchor === 'visual') {
+        if (item.hitAt === undefined) fail(`${itemPath}.hitAt`, `anchor:"${item.anchor}" 时须显式提供听感落点 hitAt；at 仍表示波形起点`);
+        else if (validHitAt && validAt && item.hitAt >= item.at) {
+          const anchorEvent = { path: `${itemPath}.hitAt`, hitAt: item.hitAt, sceneIndex };
+          if (item.anchor === 'beat') sfxBeatAnchors.push(anchorEvent);
+          else if (sceneIndex === null) fail(`${itemPath}.anchor`, 'visual 锚点须放在 scene.sfx[]，以便绑定同镜头 scene.events');
+          else sfxVisualAnchors.push(anchorEvent);
+        }
       }
       if (!SFX_TYPES.includes(item.type)) fail(`${itemPath}.type`, `必须为 ${SFX_TYPES.join('、')} 之一`);
       if (item.gain !== undefined && finite(item.gain, `${itemPath}.gain`)) {
@@ -164,6 +185,13 @@ export function analyzeStoryboard(data, options = {}) {
   }
 
   const project = object(data.project, 'project') ?? {};
+  if (project.settings !== undefined) {
+    const projectSettings = object(project.settings, 'project.settings');
+    if (projectSettings?.beatToleranceMs !== undefined
+      && (!isFiniteNumber(projectSettings.beatToleranceMs) || projectSettings.beatToleranceMs < 0)) {
+      fail('project.settings.beatToleranceMs', '必须为大于或等于 0 的有限毫秒数');
+    }
+  }
   for (const key of ['fps', 'duration']) {
     if (finite(project[key], `project.${key}`) && project[key] <= 0) fail(`project.${key}`, '必须大于 0');
   }
@@ -412,7 +440,9 @@ export function analyzeStoryboard(data, options = {}) {
         text(variant.change, `${path}.materialVariant.change`);
       }
     }
-    checkSfx(scene.sfx, `${path}.sfx`, validDuration ? duration : null);
+    checkSfx(scene.sfx, `${path}.sfx`, validDuration ? duration : null, i);
+    const visualEventTimes = [];
+    visualEventTimesByScene.set(i, visualEventTimes);
     if (scene.hud !== undefined) {
       const hudIds = new Set();
       const hudTypes = ['counter', 'bar', 'heart', 'status', 'clock', 'badge', 'log', 'checklist', 'axis', 'level', 'score', 'banner'];
@@ -589,6 +619,7 @@ export function analyzeStoryboard(data, options = {}) {
       }
       if (!finite(event.at, `${eventPath}.at`)) return;
       if (validDuration && (event.at < 0 || event.at >= duration)) fail(`${eventPath}.at`, '事件必须位于成片 [0,duration)');
+      if (hasSceneInterval && event.at >= scene.start && event.at < scene.end) visualEventTimes.push(event.at);
       if (hasSceneInterval && !(event.at >= scene.start && event.at < scene.end)) {
         fail(`${eventPath}.at`, '事件必须位于场景 [start, end)');
       }
@@ -606,6 +637,24 @@ export function analyzeStoryboard(data, options = {}) {
       }
     });
   });
+  for (const { path, hitAt } of sfxBeatAnchors) {
+    if (!validBeatGrid) continue;
+    if (beats.length === 0) {
+      warn(path, 'anchor:"beat" 但 music.beats 为空，没有可核对的音乐拍点网格');
+      continue;
+    }
+    const nearest = beats.reduce((closest, beat) => Math.abs(hitAt - beat) < Math.abs(hitAt - closest) ? beat : closest);
+    const offsetMs = (hitAt - nearest) * 1000;
+    if (Math.abs(offsetMs) > beatToleranceMs + EPSILON) {
+      warn(path, `音效 hitAt 最近节拍=${Math.round(nearest * 1000)}ms，偏差 offsetMs=${Number(offsetMs.toFixed(1))}；容差 ${beatToleranceMs}ms`);
+    }
+  }
+  for (const { path, hitAt, sceneIndex } of sfxVisualAnchors) {
+    const eventsInScene = visualEventTimesByScene.get(sceneIndex) ?? [];
+    if (!eventsInScene.some(eventAt => Math.abs(eventAt - hitAt) <= EPSILON)) {
+      warn(path, 'anchor:"visual" 的 hitAt 没有同一镜头、同一成片时刻的 scene.events 事件');
+    }
+  }
   const boundaries = [];
   for (let i = 1; i < scenes.length; i++) {
     if (validInterval(scenes[i - 1]) && validInterval(scenes[i]) && Math.abs(scenes[i - 1].end - scenes[i].start) <= EPSILON) boundaries.push(scenes[i - 1].end);
@@ -654,7 +703,11 @@ function main(args) {
     process.exitCode = 1;
     return;
   }
-  const { errors, warnings } = analyzeStoryboard(data, { delivery: flags.has('--delivery') });
+  const beatToleranceMs = data?.project?.settings?.beatToleranceMs;
+  const { errors, warnings } = analyzeStoryboard(data, {
+    delivery: flags.has('--delivery'),
+    ...(beatToleranceMs !== undefined ? { beatToleranceMs } : {}),
+  });
   if (warnings.length) console.warn(warnings.map(message => `警告：${message}`).join('\n'));
   if (errors.length) {
     console.error(errors.join('\n'));

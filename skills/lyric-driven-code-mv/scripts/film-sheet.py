@@ -27,6 +27,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from path_safety import assert_no_path_aliases
 
 try:
     from PIL import Image, ImageDraw
@@ -102,49 +103,54 @@ def main(argv=None):
     ap.add_argument("--title", default="", help="图头文字，默认取目录名")
     args = ap.parse_args(argv)
 
-    tmp = tempfile.mkdtemp(prefix="film-sheet-")
-    try:
+    with tempfile.TemporaryDirectory(prefix="film-sheet-") as tmp:
         items = collect(args.target, max(1, args.frames), tmp)
-    finally:
-        pass
+        target = Path(args.target)
+        inputs = [target]
+        if target.is_dir():
+            inputs.extend(path for path, _ in items)
+            metadata = target / "meta.json"
+            if metadata.exists():
+                inputs.append(metadata)
+        assert_no_path_aliases(inputs=inputs, outputs=[args.out])
 
-    ims = []
-    for path, t in items:
-        try:
-            im = Image.open(path).convert("RGB")
-        except OSError:
-            continue
-        h = round(im.height * args.width / im.width)
-        ims.append((im.resize((args.width, h), Image.LANCZOS), t))
-    if not ims:
-        raise SystemExit("没有可用图片。")
+        ims = []
+        for path, t in items:
+            try:
+                im = Image.open(path).convert("RGB")
+            except OSError:
+                continue
+            h = round(im.height * args.width / im.width)
+            ims.append((im.resize((args.width, h), Image.LANCZOS), t))
+        if not ims:
+            raise SystemExit("没有可用图片。")
 
-    cols = max(1, args.cols)
-    rows = (len(ims) + cols - 1) // cols
-    cell_h = max(im.height for im, _ in ims)
-    pad = 6
-    title = args.title or Path(args.target).name
-    head = 30 if title else 0
-    sheet = Image.new(
-        "RGB",
-        (cols * args.width + pad * (cols + 1), rows * (cell_h + LABEL_H) + pad * (rows + 1) + head),
-        (18, 18, 22),
-    )
-    dr = ImageDraw.Draw(sheet)
-    if head:
-        dr.text((10, 8), f"{title}  ({len(ims)} frames)", fill=(235, 235, 240))
+        cols = max(1, args.cols)
+        rows = (len(ims) + cols - 1) // cols
+        cell_h = max(im.height for im, _ in ims)
+        pad = 6
+        title = args.title or Path(args.target).name
+        head = 30 if title else 0
+        sheet = Image.new(
+            "RGB",
+            (cols * args.width + pad * (cols + 1), rows * (cell_h + LABEL_H) + pad * (rows + 1) + head),
+            (18, 18, 22),
+        )
+        dr = ImageDraw.Draw(sheet)
+        if head:
+            dr.text((10, 8), f"{title}  ({len(ims)} frames)", fill=(235, 235, 240))
 
-    for i, (im, t) in enumerate(ims):
-        r, c = divmod(i, cols)
-        x = pad + c * (args.width + pad)
-        y = head + pad + r * (cell_h + LABEL_H + pad)
-        sheet.paste(im, (x, y + LABEL_H))
-        label = f"t={t}s" if isinstance(t, (int, float)) else f"#{i + 1}"
-        dr.text((x + 4, y + 6), label, fill=(255, 214, 110))
+        for i, (im, t) in enumerate(ims):
+            r, c = divmod(i, cols)
+            x = pad + c * (args.width + pad)
+            y = head + pad + r * (cell_h + LABEL_H + pad)
+            sheet.paste(im, (x, y + LABEL_H))
+            label = f"t={t}s" if isinstance(t, (int, float)) else f"#{i + 1}"
+            dr.text((x + 4, y + 6), label, fill=(255, 214, 110))
 
-    sheet.save(args.out, quality=88)
-    print(f"已保存 {args.out}（{len(ims)} 帧，{cols} 列）")
-    return 0
+        sheet.save(args.out, quality=88)
+        print(f"已保存 {args.out}（{len(ims)} 帧，{cols} 列）")
+        return 0
 
 
 if __name__ == "__main__":

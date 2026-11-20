@@ -28,10 +28,10 @@ Node 侧零第三方包：`scripts/`、`assets/scenes/`、`assets/templates/star
 1. **固定输入与证据。** 确认歌曲文件及版本、校对歌词、截取范围、画幅、人物设定和交付范围。自己找歌时先读 [音频与授权](references/audio-and-rights.md)，核对作品及录音的使用条件。分析参考片时分别记录可见事实、音频核对结果和实现推断；只有完成全时段检查才称“看完整片”。作者工具无源码或声明证据时标为未知。
 2. **建立两条时间线。** 标注句起止、段落、重要重音和留白；语义表记录人物关系、意象和动作。读 [时间与分镜](references/storyboard-and-timing.md)，统一成片坐标与原曲偏移。器乐配原创叙事字幕时说明文案角色，不当作演唱转录。已有 FFmpeg 时先用 `scripts/analyze-audio.mjs` 生成离线能量、停顿、起音和 BPM/相位候选；需要同轴检查镜头和字幕时读 [同步候选图](references/sync-review.md)。不把候选当歌词对齐，无法试听也可完成透明标注的草稿。
 3. **先过角色辨识度，再选装置与场景。** 三人以上主要角色先建立角色卡和等尺度纯黑剪影对照；去掉名字、配色和小道具后，仍须凭头部/服装轮廓、身形比例或姿态中的至少两类区分每人。群像最小实际显示尺寸和单人近景都要通过；失败时先重画角色，不靠换色、加小饰品或滤镜掩盖。
-4. **先选装置，再选场景。** 先确定聊天、游戏系统、时间轴、计数器、章节牌、视角或材质舞台，再为每镜写目标→行动→反馈→结果。用 `chapters[]` 记录标题牌、关系阶段和结算；用 `scene.hud[]` 表达数值、状态、归零、损坏或失败的情绪反馈；同构图换季节、材质或年代时写 `materialVariant`。镜长由信息密度决定，不设固定上限；建议每 8–12 秒至少有一次可读变化，长镜头也可用于等待和留白。参考 [装置与章节](references/story-devices.md) 和 [HUD 与字幕](references/hud-and-subtitles.md)；要现成骨架时从 [装置模板](references/device-templates.md) 的五个 JSON（私信、读档、清单、结算、双轴滑块）里挑一个改写，别从空白开始。反复意象安排首次出现、变化和再出现；重复副歌增加信息或后果。保留人物身份、装束和道具来龙去脉。像素美术、摄像机、字幕和双人叙事读 [像素世界与演出](references/pixel-game-visuals.md)。
+4. **先选装置，再选场景。** 先确定聊天、游戏系统、时间轴、计数器、章节牌、视角或材质舞台，再为每镜写目标→行动→反馈→结果。每句歌词先落到视觉账本：具体主体/物件、可识别特征、景别、准备→动作→结果、材质/光线；不能只给同一大场景换字幕。相邻四五句后检查是否需要换场景或推进内部事件，不机械一行一切。用 `chapters[]` 记录标题牌、关系阶段和结算；用 `scene.hud[]` 表达数值、状态、归零、损坏或失败的情绪反馈；同构图换季节、材质或年代时写 `materialVariant`。镜长由信息密度决定，不设固定上限；建议每 8–12 秒至少有一次可读变化，长镜头也可用于等待和留白。参考 [装置与章节](references/story-devices.md) 和 [HUD 与字幕](references/hud-and-subtitles.md)；要现成骨架时从 [装置模板](references/device-templates.md) 的五个 JSON（私信、读档、清单、结算、双轴滑块）里挑一个改写，别从空白开始。反复意象安排首次出现、变化和再出现；重复副歌增加信息或后果。保留人物身份、装束和道具来龙去脉。像素美术、摄像机、字幕和双人叙事读 [像素世界与演出](references/pixel-game-visuals.md)。
 5. **选择一种实现路线。** 沿用用户指定框架及现有工程。无框架且需要最小可运行工程时，复制整个 `assets/templates/starter/`；其中已包含共享核心与运行文件，复制后可独立运行 `node export.mjs --help`。HTML 动效工程可采用 HyperFrames，React 工程优先 Remotion。实现前读 [依赖与交付](references/dependencies-and-delivery.md)，列出必需项、已有项和可选项；安装包、下载浏览器/模型/字体、使用 API 或付费服务前先说明并沿用已有授权。
-6. **完成代表片段。** 新作品先交角色卡/剪影表、原尺寸动作条和约10–15秒样片；若有三人以上主角，样片须同时包含一个单人辨识镜头和一个群像镜头，确认单人近景切回群像后仍能认出同一角色。样片还必须包含歌词意象任务、反馈变化及转场；用户指定其他长度或修改已有工程时按其范围。分镜 JSON 作为时长、歌词、场景边界、转场及音乐状态的真源，代码按 `scene.id` 提供画法。每帧由时间直接求值，粒子固定种子。出口转场占前镜尾段，下一镜固定 `local=0` 预卷，不增加总时长。执行结构校验和 `scripts/qa.mjs` 的重复、逆序、乱序像素比较。
-8. **扩展与验收。** 先预览代表片段，核对动作峰值、句尾、转场、歌词面板与摄像机边缘，再扩展已授权范围。参考像素歌词视频时，在分镜顶层使用 `captionStyle.mode:"scene-panel"`，让浏览器预览、ASS 导出和章节牌保持同一套暖白/描边/像素面板参数；不提供时保留普通底部字幕兼容旧稿。导出后执行 FFprobe、完整解码、接触表和关键帧检查；具备播放条件时完整播放，逐项记录真实完成的检查。不能试听时交付 `draft`，明确待核对落点，不能声称音画已核对。
+6. **完成代表片段。** 新作品先交角色卡/剪影表、关键帧接触表、原尺寸动作条和约10–15秒样片；若有三人以上主角，样片须同时包含一个单人辨识镜头和一个群像镜头，确认单人近景切回群像后仍能认出同一角色。每句歌词须有对应的可见焦点和动作结果；先审关键帧与无字幕版，再补动画。样片还必须包含歌词意象任务、反馈变化及转场；用户指定其他长度或修改已有工程时按其范围。分镜 JSON 作为时长、歌词、场景边界、转场及音乐状态的真源，代码按 `scene.id` 提供画法。每帧由时间直接求值，粒子固定种子。出口转场占前镜尾段，下一镜固定 `local=0` 预卷，不增加总时长。执行结构校验和 `scripts/qa.mjs` 的重复、逆序、乱序像素比较。
+8. **扩展与验收。** 先预览代表片段，核对动作峰值、句尾、转场、歌词面板与摄像机边缘，再扩展已授权范围。修改已有成片时先审片定位问题，只改对应镜头并定向复评；保留用户已确认的转场和画面决定。参考像素歌词视频时，在分镜顶层使用 `captionStyle.mode:"scene-panel"`，让浏览器预览、ASS 导出和章节牌保持同一套暖白/描边/像素面板参数；不提供时保留普通底部字幕兼容旧稿。导出后执行 FFprobe、完整解码、接触表和关键帧检查；具备播放条件时完整播放，逐项记录真实完成的检查。不能试听时交付 `draft`，明确待核对落点，不能声称音画已核对。
 
 ## 音乐证据与交付阶段
 
@@ -74,7 +74,7 @@ node "<SKILL_DIR>/scripts/validate-storyboard.mjs" "<SKILL_DIR>/assets/storyboar
 node "<SKILL_DIR>/scripts/validate-storyboard.mjs" path/to/storyboard.json --delivery
 node "<SKILL_DIR>/scripts/visualize-sync.mjs" path/to/storyboard.json work/audio-analysis.json --out work/sync-review.svg
 node "<SKILL_DIR>/scripts/qa.mjs" "<SKILL_DIR>/assets/templates/starter/frame.mjs" --duration 12 --fps 30 --storyboard "<SKILL_DIR>/assets/storyboard-example.json" --out work/qa.json
-node "<SKILL_DIR>/scripts/verify-sfx.mjs" --audio work/mixed.wav --storyboard work/storyboard.json --window-ms 50 --out work/sfx-evidence.json
+node "<SKILL_DIR>/scripts/verify-sfx.mjs" --audio work/mixed.wav --reference-audio work/music-only.wav --storyboard work/storyboard.json --window-ms 50 --out work/sfx-evidence.json
 node "<SKILL_DIR>/scripts/lrc.mjs" --lrc work/song.lrc --offset 12 --storyboard work/storyboard.json --out work/lyrics.json
 node "<SKILL_DIR>/scripts/new-storyboard.mjs" --preset narrative-12 --duration 90 --lyrics work/lyrics.json --out work/storyboard.json
 node "<SKILL_DIR>/assets/templates/starter/export.mjs" --storyboard "<SKILL_DIR>/assets/storyboard-example.json" --out work/demo.mp4
@@ -104,18 +104,19 @@ node "<SKILL_DIR>/assets/templates/starter/export.mjs" --storyboard path/to/stor
 
 `scripts/lrc.mjs` 把 LRC 时点按 `--offset` 秒加到片段时钟，逐行推算 `end`；提供 `--storyboard` 时会为跨镜歌词补 `allowSceneSplit` 与原因。`scripts/new-storyboard.mjs` 生成 12 镜待填写骨架，歌词可从 JSON 直接导入。12 个画法资产位于 [assets/scenes](assets/scenes/README.md)，每个工厂都可配置主体取景位置、调色板和镜头时长。`--sfx-script PATH` 可让复制出去的 starter 使用自定义音效模块，不需要改源码。**成片默认不烧草稿水印**：`draft` 也不会在画面上盖字，核对进度由导出资产清单的 `musicStatus`/`draftMark` 与 `music.pendingChecks` 记录；确实需要成片内可见提示时显式写 `project.draftMark:true`（文案 `project.draftMarkText`）。
 
-`hud-density.mjs` 把切镜、材质、HUD、事件、音效、字幕六类变化摊到时间轴上，报最长空白窗与单镜内部空窗；`--strict` 时有空窗即非零退出。`sync-audit.py` 是**出片前的总闸**，一条命令核对五类时间问题：分镜网格与分析网格是否同一个 BPM、切点是否落在拍点、`sync:"beat"` 的场景事件是否落在拍点、歌词是否落在强起音、chapters 与 sections 边界是否同界且都在切点上；给 `--video` 时再实测成片里字幕距画布底/右的真实像素。**必须传 `--analysis`**：只看「切点 vs 分镜网格」会得到 0ms 的完美结论，因为切点就是从那个网格上吸附来的——网格本身错了，切点再齐也没用（旧分镜的 evidence 写着「98.8，144.1 为另一强候选未采纳」，正是这种自证循环）。没有 `--analysis` 时歌词只按拍点提示，判据更弱，同样不判错。**歌词与强起音的偏差也只提示、不判错**：起音检测找的是能量瞬变（鼓点、爆破音、辅音起头），人声用连音长句起唱时平滑进来，没有瞬变可寻，那种「不在强起音上」是检测器的盲区而不是对位错误——实测某片 13 行里 9 行与最近强起音差 100–800ms，但成片音轨与 LRC 起点的相位差只有 1.2ms，错的是判据不是时间轴；LRC 是人手标注，在这件事上比启发式检测可信，所以偏出容差的行只列候选（含反方向候选），交给人耳定夺。`timeline-sync.py` 从音轨取能量包络并估拍点，与切镜、字幕画进同一张图，标 `speculative` 的 BPM 只能用来发现整段踩错，不能据此宣称同步；`--align beats` 优先用分镜自带的 `music.beats` 当参考点，没有才退回自己估的拍点。`safe-area.py` 叠平台安全区（顶部、底部 8.5%、右侧 6.5%、4:3、9:16），字幕底边与 HUD 都要躲开，1080p 的底边下限是 92 px。`layout-check.py` 按成片像素查 HUD 之间、HUD 与字幕带之间的重叠，以及越出安全区的矩形；矩形写作 `名称:x,y,x1,y1`（左上角 + 右下角，都是绝对像素，不是宽高），`--subtitle-band` 传含底条与描边的最外层矩形；`--scenes "s09-ledger:full-ui"` 这样的整屏场景可豁免该场 HUD 检查，字幕带仍受安全区约束。`minimal-renderer.py` 是**占位与版式校验用**的最小渲染器（标题牌 + 数值 HUD + 双语字幕），**不含场景绘制，不作为成片渲染器**；要画面完成度就走 starter 或用户自己的工程。`sfx.mjs` 合成八种音效（tick/type/click/whoosh/confirm/error/riser/chime），长度严格等于 `project.duration`，供混音使用；两层对齐关系见 [音效层与卡点](references/sfx-and-beat.md)——**画面踩拍点，音效跟画面同帧，音效不踩拍**。
+`sfx.mjs` 合成八种音效（tick/type/click/whoosh/confirm/error/riser/chime），长度严格等于 `project.duration`，供混音使用；两层对齐关系见 [音效层与卡点](references/sfx-and-beat.md)：逐条选择 visual/beat/free 锚点，长音效可在目标前启动，beat 锚点的 hitAt 才参与拍点核对。混音轨 RMS 只能报告瞬变；若使用 BGM-only 差分也只报告归因候选，最终仍需试听。
 
-校验器保留 `validateStoryboard(data) → errors[]`，提供 `analyzeStoryboard(data,{beatToleranceMs,delivery}) → {errors,warnings}`。普通提示不改变退出码；`--strict` 只是将结构检查中的警告视为失败，通过不证明可发布或 `verified`。`--delivery` 检查许可记录、音乐证据及草稿待核对清单，字段规则见时间与分镜参考。跨镜歌词、显式踩拍事件、HUD 支撑、装置/章节覆盖及授权缺项都有可定位的提示；工具不证明语义正确、许可有效或实际音画同步。
+校验器保留 `validateStoryboard(data) → errors[]`，提供 `analyzeStoryboard(data,{beatToleranceMs,delivery}) → {errors,warnings}`；CLI 读取 `project.settings.beatToleranceMs` 并传入同一分析器。
 
 ## 完成标准
 
-- 去掉字幕，动作仍能说明段落含义；HUD 变化可追溯到行动，道具先获得再使用。
+- 去掉字幕，动作仍能说明每句的具体含义；主体、道具、接触与结果都可读，HUD 变化可追溯到行动。
+- 细节与精致度通过材质、光向、遮挡、角色特征和次级动作体现；不靠抽象装饰、背景铺陈或噪点填满画面。
 - 主要角色在纯黑剪影、最小群像尺寸和单人近景间仍可辨，不只靠颜色、姓名牌或小道具识别；单人近景使用独立细节资产，不把低分辨率群像精灵直接放大。
 - 重复段落有发展，等待、失败、完成及留白与歌曲情绪相称。
 - 同帧重复和乱序求值一致，首尾、每镜及转场没有状态漂移；摄像机移动不露黑，字幕清晰。
 - 字幕底边与 HUD 都在平台安全区内：用 `safe-area.py` 叠一帧确认，别只看成片。
 - `hud-density.mjs` 报出的最长空窗不超过 12 秒；超过就先补变化，别加镜头。
-- 音效落在画面事件上（不是拍点上），`project.sfx[]`/`scene.sfx[]` 通过校验，混音后峰值不削顶。
+- 每条音效选择 visual/beat/free 锚点；起点 at 与落点 hitAt 含义清楚。混音后检查峰值，音效来源及同步结论不超出验证证据。
 - 成片音视频流、时长、画幅和帧率正确；音乐证据状态及实际检查范围写清楚。
 - 交付可编辑源文件、分镜与分析数据、资源来源/许可/署名、所选依赖锁文件（使用依赖时）、成片和简短验收记录。仅请求报告、分镜或草稿时交付对应阶段，不擅自扩展整曲。

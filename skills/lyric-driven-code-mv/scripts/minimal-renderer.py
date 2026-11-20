@@ -20,6 +20,7 @@ import os
 import random
 import shutil
 import subprocess
+from path_safety import assert_no_path_aliases
 import sys
 from pathlib import Path
 
@@ -467,6 +468,15 @@ def main(argv):
     parser.add_argument("--probe", nargs="+", type=int, metavar="FRAME", help="只输出指定帧序号的 PNG")
     parser.add_argument("--out", type=Path, help="视频输出路径；--probe 模式下为 PNG 输出目录")
     args = parser.parse_args(argv)
+    if args.probe is not None:
+        output_dir = args.out or Path("work/probe")
+        outputs = [output_dir / f"frame_{index:05d}.png" for index in args.probe]
+    else:
+        outputs = [args.out or Path("work/silent.mp4")]
+    try:
+        assert_no_path_aliases(inputs=[args.storyboard], outputs=outputs)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
     sbc = load(args.storyboard)
     p = sbc["project"]
     total = int(round(p["duration"] * p["fps"]))

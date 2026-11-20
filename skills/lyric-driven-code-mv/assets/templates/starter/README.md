@@ -79,12 +79,12 @@ node export.mjs --storyboard C:\你的工程\storyboard.json --audio C:\你的�
 node export.mjs --storyboard C:\你的工程\storyboard.json --audio C:\你的素材\song.wav --sfx --out C:\你的输出\song-mv.mp4
 ```
 
-音效由 skill 目录的 `scripts/sfx.mjs` 实时合成（八种，无外部素材），混音结果覆盖内部 `audio.wav`，所以 `.mp4.assets.json` 记录的哈希是最终音轨。分镜里没有任何 sfx 时 `--sfx` 直接报错，不会悄悄导出一条没有音效的片子。把 starter 单独复制到别处时可用 `--sfx-script C:\你的工程\sfx.mjs` 指定模块；模块需要导出 `collectSfx`、`renderTimeline` 和 `encodeWav`，缺失或不兼容时会指出检查路径和必需导出。两层对齐关系（画面踩拍点、音效跟画面）见 [音效层与卡点](../../../references/sfx-and-beat.md)。
+两层对齐关系见 [音效层与卡点](../../../references/sfx-and-beat.md)：visual/beat/free 锚点按事件选择，长音效可提前起声；beat 校验检查 `hitAt`，不把波形起点 `at` 误当落点。
 
-45 个事件的导出音轨可用 `scripts/verify-sfx.mjs` 按50ms RMS包络逐个核对起音；提供混音音轨和分镜，会输出全量命中表及 JSON 证据：
+音效事件可用 `scripts/verify-sfx.mjs` 按 50 ms RMS 包络检查事件窗口；只提供混音音轨时，输出仅表示观察到瞬变，不能证明瞬变来自 SFX。若提供同起点、同采样率、同长度的 BGM-only 参考音轨，则会额外输出差分归因候选，仍须试听确认：
 
 ```powershell
-node ..\..\..\scripts\verify-sfx.mjs --audio C:\你的工程\mixed.wav --storyboard C:\你的工程\storyboard.json --window-ms 50 --out C:\你的工程\sfx-evidence.json
+node ..\..\..\scripts\verify-sfx.mjs --audio C:\你的工程\mixed.wav --reference-audio C:\你的工程\music-only.wav --storyboard C:\你的工程\storyboard.json --window-ms 50 --out C:\你的工程\sfx-evidence.json
 ```
 
 `project.audio.path` 相对于 JSON 所在目录。`--audio` 仅用于重定位同一素材：它与声明路径一致，或与仍可读取的声明文件SHA-256相同，或匹配预先记录的 `project.audio.sha256`。原路径已失效又没有哈希时会拒绝覆盖；先核对素材并更新JSON。换歌须同时更新路径、来源、许可、署名与音乐证据，不能把原创模板记录套到另一首歌上。

@@ -5,9 +5,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { collectSampleTimes, runDeterminismQA } from '../skills/lyric-driven-code-mv/scripts/qa.mjs';
+import { collectSampleTimes, measureComposition, runDeterminismQA } from '../skills/lyric-driven-code-mv/scripts/qa.mjs';
 
 const frame = value => ({ width: 1, height: 1, data: new Uint8ClampedArray([value, 0, 0, 255]) });
+
+test('composition measurement handles a large palette without spreading every color into a call', () => {
+  const width = 400, height = 400, data = new Uint8Array(width * height * 4);
+  for (let pixel = 0; pixel < width * height; pixel++) {
+    data[pixel * 4] = pixel & 255;
+    data[pixel * 4 + 1] = pixel >> 8 & 255;
+    data[pixel * 4 + 2] = pixel >> 16 & 255;
+    data[pixel * 4 + 3] = 255;
+  }
+  assert.doesNotThrow(() => measureComposition({ width, height, data }));
+});
 
 test('large RGBA frames warn once per QA run without changing formal determinism', async () => {
   const warnings = [];
@@ -191,6 +202,16 @@ test('CLI成功后关闭持有定时器的适配器并自然退出', t => {
   const report = JSON.parse(readFileSync(out, 'utf8'));
   assert.equal(report.warmupFrames, 3);
   assert.equal(report.warmupRenderCount, 3);
+});
+
+test('CLI refuses to overwrite its renderer module with a report', t => {
+  const fixture = cliFixture(t, steadyRenderer);
+  const modulePath = join(fixture.dir, 'adapter.mjs');
+  const original = readFileSync(modulePath, 'utf8');
+  const child = fixture.run(['--times', '0', '--out', modulePath]);
+  assert.equal(child.status, 1);
+  assert.match(child.stderr, /alias|overwrite|覆盖/i);
+  assert.equal(readFileSync(modulePath, 'utf8'), original);
 });
 
 test('CLI渲染失败仍关闭活动资源并保留渲染错误', t => {
