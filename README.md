@@ -308,3 +308,13 @@ node --test
 测试可使用 `FFMPEG_PATH` / `FFPROBE_PATH` 指向已有程序；PATH 中缺少工具时只跳过需要实际解码/编码的用例，并说明原因。显式配置无效路径会报错。`--strict` 把结构警告升级为失败，通过它仍需核听；草稿交付须附 `music.pendingChecks` 具体时间区间与检查内容。使用说明见 [SKILL.md](skills/lyric-driven-code-mv/SKILL.md)、[时间与分镜](skills/lyric-driven-code-mv/references/storyboard-and-timing.md)、[像素/字幕](skills/lyric-driven-code-mv/references/pixel-game-visuals.md)、[音频/授权](skills/lyric-driven-code-mv/references/audio-and-rights.md)、[依赖/验收](skills/lyric-driven-code-mv/references/dependencies-and-delivery.md)。
 
 长期维护、复现反馈、兼容性、发布与回退流程见 [维护指南](MAINTENANCE.md)。同步图的误差解释与器乐叙事字幕说明见 [同步复核](skills/lyric-driven-code-mv/references/sync-review.md)；音效与拍点的两层关系见 [音效层与卡点](skills/lyric-driven-code-mv/references/sfx-and-beat.md)；装置骨架的字段映射见 [装置模板](skills/lyric-driven-code-mv/references/device-templates.md)；40 条参考作品的复盘与改进依据见 [案例研究](docs/CASE-STUDY-2026-11.md)。
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=zizhengLI4%2Flyric-driven-code-mv-skill&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=zizhengLI4/lyric-driven-code-mv-skill&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=zizhengLI4/lyric-driven-code-mv-skill&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=zizhengLI4/lyric-driven-code-mv-skill&type=date&legend=top-left" />
+ </picture>
+</a>
