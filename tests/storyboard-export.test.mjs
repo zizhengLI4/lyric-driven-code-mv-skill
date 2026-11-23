@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { requireMediaTools } from './media-tools.mjs';
+import { writeTestReview } from './review-fixture.mjs';
 
 const base = new URL('../skills/lyric-driven-code-mv/assets/templates/starter/', import.meta.url);
 const source = JSON.parse(await readFile(new URL('../skills/lyric-driven-code-mv/assets/storyboard-example.json', import.meta.url), 'utf8'));
@@ -156,7 +158,6 @@ test('单帧CLI不需要媒体工具，按指定成片秒导出世界层PNG', as
 });
 
 test('素材清单无法发布时保留旧MP4并清理本次临时产物', async t => {
-  const { requireMediaTools } = await import('./media-tools.mjs');
   const tools = requireMediaTools(t, ['ffmpeg', 'ffprobe']); if (!tools) return;
   const { root, path } = await setup(t);
   const exporter = await import(new URL('export.mjs', base));
@@ -322,7 +323,8 @@ test('draft 默认不烧水印，显式开启才烧，真实歌曲必须输入�
   await assert.rejects(() => exporter.loadProject(exporter.parseArgs(['--storyboard', path])), /音轨|音频/);
   const audio = join(root, 'song.wav'); await writeFile(audio, exporter.synthesizeWAV());
   data.project.audio.path = 'song.wav'; await writeFile(path, JSON.stringify(data));
-  const c = await exporter.loadProject(exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', join(root, 'frames')]));
+  const { path: review } = await writeTestReview(root, path, data);
+  const c = await exporter.loadProject(exporter.parseArgs(['--storyboard', path, '--review', review, '--audio', audio, '--frames-dir', join(root, 'frames')]));
   assert.equal(c.audioStart, 2);
   // 默认：draft 不盖水印
   assert.doesNotMatch(exporter.createASS(c), /待核对落点/);
@@ -332,8 +334,10 @@ test('draft 默认不烧水印，显式开启才烧，真实歌曲必须输入�
   assert.equal(manifest.frameCount, 16);
   // 显式开启后才烧，文案可定制
   data.project.draftMark = true; data.project.draftMarkText = '内部草稿提示'; await writeFile(path, JSON.stringify(data));
+  const tools = requireMediaTools(t, ['ffmpeg', 'ffprobe']); if (!tools) return;
   const shownDir = join(root, 'frames-with-draft-mark');
-  const shown = exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', shownDir, '--frames-only']);
+  await writeTestReview(root, path, data);
+  const shown = exporter.parseArgs(['--storyboard', path, '--review', review, '--audio', audio, '--frames-dir', shownDir, '--frames-only', '--ffmpeg', tools.ffmpeg, '--ffprobe', tools.ffprobe]);
   await exporter.exportVideo(shown, () => {});
   const shownAssets = JSON.parse(await readFile(join(shownDir, 'asset-manifest.json'), 'utf8'));
   assert.deepEqual(shownAssets.draftMark, { enabled: true, text: '内部草稿提示' });
@@ -341,18 +345,21 @@ test('draft 默认不烧水印，显式开启才烧，真实歌曲必须输入�
   // 关掉后不烧；music.status 仍是 draft，如实记进资产清单
   data.project.draftMark = false; await writeFile(path, JSON.stringify(data));
   const hiddenDir = join(root, 'frames-with-hidden-draft-mark');
-  const hidden = exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', hiddenDir, '--frames-only']);
+  await writeTestReview(root, path, data);
+  const hidden = exporter.parseArgs(['--storyboard', path, '--review', review, '--audio', audio, '--frames-dir', hiddenDir, '--frames-only', '--ffmpeg', tools.ffmpeg, '--ffprobe', tools.ffprobe]);
   await exporter.exportVideo(hidden, () => {});
   const assets = JSON.parse(await readFile(join(hiddenDir, 'asset-manifest.json'), 'utf8'));
   assert.deepEqual(assets.draftMark, { enabled: false, text: null });
   assert.equal(assets.musicStatus, 'draft', '不烧水印不等于把状态洗成 verified');
   assert.doesNotMatch(exporter.createASS(await exporter.loadProject(hidden)), /内部草稿提示|待核对落点/);
   data.lyrics[0].text = '修改后的字幕'; await writeFile(path, JSON.stringify(data));
-  const changed = await exporter.loadProject(exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', join(root, 'frames'), '--resume']));
+  await writeTestReview(root, path, data);
+  const changed = await exporter.loadProject(exporter.parseArgs(['--storyboard', path, '--review', review, '--audio', audio, '--frames-dir', join(root, 'frames'), '--resume']));
   await assert.rejects(() => exporter.prepareFrames(changed, () => {}), /配置|源码/);
   data.lyrics[0].text = '新的分镜字幕'; await writeFile(path, JSON.stringify(data));
   await writeFile(audio, Buffer.from('different audio bytes'));
-  const changedAudio = await exporter.loadProject(exporter.parseArgs(['--storyboard', path, '--audio', audio, '--frames-dir', join(root, 'frames'), '--resume']));
+  await writeTestReview(root, path, data);
+  const changedAudio = await exporter.loadProject(exporter.parseArgs(['--storyboard', path, '--review', review, '--audio', audio, '--frames-dir', join(root, 'frames'), '--resume']));
   await assert.rejects(() => exporter.prepareFrames(changedAudio, () => {}), /配置|源码/);
 });
 
@@ -368,7 +375,8 @@ test('真实音轨按sourceOffset裁剪且JSON决定输出音视频时长', asyn
   const generated = spawnSync(tools.ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'aevalsrc=if(lt(t\\,2)\\,0\\,0.2*sin(2*PI*440*t)):s=48000:d=8', '-y', audio], { windowsHide: true });
   assert.equal(generated.status, 0, generated.stderr?.toString());
   const exporter = await import(new URL('export.mjs', base));
-  const c = exporter.parseArgs(['--storyboard', path, '--audio', audio, '--out', join(root, 'actual.mp4'), '--ffmpeg', tools.ffmpeg, '--ffprobe', tools.ffprobe]);
+  const { path: review } = await writeTestReview(root, path, data);
+  const c = exporter.parseArgs(['--storyboard', path, '--review', review, '--audio', audio, '--out', join(root, 'actual.mp4'), '--ffmpeg', tools.ffmpeg, '--ffprobe', tools.ffprobe]);
   const result = await exporter.exportVideo(c, () => {});
   assert.ok(Math.abs(Number(result.format.duration) - 4) < 0.04);
   assert.equal(result.streams.find(s => s.codec_type === 'video').nb_frames, '16');
@@ -383,5 +391,6 @@ test('真实音轨按sourceOffset裁剪且JSON决定输出音视频时长', asyn
   let energy = 0; for (let i = 0; i + 4 <= pcm.stdout.length; i += 4) energy += pcm.stdout.readFloatLE(i) ** 2;
   assert.ok(energy / (pcm.stdout.length / 4) > 0.005, '裁剪后第一拍应来自原曲2秒后的有声区');
   data.project.sourceOffset = 7.5; await writeFile(path, JSON.stringify(data));
+  await writeTestReview(root, path, data);
   await assert.rejects(() => exporter.exportVideo(c, () => {}), /短|长度|时长/);
 });

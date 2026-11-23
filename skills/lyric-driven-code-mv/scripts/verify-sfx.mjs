@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { spawn } from 'node:child_process';
+import { decodePcm, inspectAudioMix } from '../assets/templates/starter/audio-review.mjs';
 import { collectSfx } from './sfx.mjs';
 import { assertNoPathAliases } from './path-safety.mjs';
 
@@ -65,34 +65,20 @@ export function verifySfxEvents({ events, samples, referenceSamples, sampleRate 
   };
 }
 
-async function decodePcm(ffmpeg, audioPath, sampleRate) {
-  return await new Promise((resolvePromise, reject) => {
-    const child = spawn(ffmpeg, ['-v', 'error', '-i', audioPath, '-vn', '-ac', '1', '-ar', String(sampleRate), '-f', 'f32le', 'pipe:1'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    const chunks = []; let size = 0, stderr = '';
-    child.stdout.on('data', chunk => { size += chunk.length; if (size > 512 * 1024 * 1024) { child.kill(); reject(new Error('解码PCM超过512MiB限制')); } else chunks.push(chunk); });
-    child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-8000); });
-    child.once('error', reject);
-    child.once('close', code => {
-      if (code !== 0) return reject(new Error(`ffmpeg 解码失败（${ffmpeg}）：${stderr || `exit ${code}`}`));
-      const bytes = Buffer.concat(chunks);
-      if (bytes.length % 4) return reject(new Error('ffmpeg 返回了不完整的 f32le 样本'));
-      const aligned = new Float32Array(bytes.length / 4);
-      for (let i = 0; i < aligned.length; i++) aligned[i] = bytes.readFloatLE(i * 4);
-      resolvePromise(aligned);
-    });
-  });
-}
-
 async function run(argv) {
   const opts = {};
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i], value = argv[i + 1];
-    if (!['--audio', '--storyboard', '--ffmpeg', '--window-ms', '--reference-audio', '--out'].includes(key) || !value || value.startsWith('--') || Object.hasOwn(opts, key)) throw new Error(`未知参数、重复参数或缺少值：${key}`);
+    if (!['--audio', '--storyboard', '--ffmpeg', '--window-ms', '--reference-audio', '--sfx-track', '--sfx-gain', '--level-window-ms', '--out'].includes(key) || !value || value.startsWith('--') || Object.hasOwn(opts, key)) throw new Error(`未知参数、重复参数或缺少值：${key}`);
     opts[key] = value;
   }
   if (!opts['--audio'] || !opts['--storyboard']) throw new Error('用法：node scripts/verify-sfx.mjs --audio mixed.wav --storyboard storyboard.json [--window-ms 50] [--reference-audio music-only.wav] [--out evidence.json]');
+  if ((opts['--sfx-track'] || opts['--sfx-gain'] || opts['--level-window-ms']) && !opts['--reference-audio']) {
+    throw new Error('双声道电平对照须配 --reference-audio，同期原曲必须与成片同起点');
+  }
+  if (opts['--sfx-gain'] && !opts['--sfx-track']) throw new Error('--sfx-gain 须配 --sfx-track');
   assertNoPathAliases({
-    inputs: [opts['--audio'], opts['--reference-audio'], opts['--storyboard']].filter(Boolean),
+    inputs: [opts['--audio'], opts['--reference-audio'], opts['--sfx-track'], opts['--storyboard']].filter(Boolean),
     outputs: [opts['--out']].filter(Boolean),
   });
   const storyboard = JSON.parse((await readFile(resolve(opts['--storyboard']), 'utf8')).replace(/^\uFEFF/u, ''));
@@ -103,6 +89,14 @@ async function run(argv) {
   const samples = await decodePcm(ffmpeg, resolve(opts['--audio']), sampleRate);
   const referenceSamples = opts['--reference-audio'] ? await decodePcm(ffmpeg, resolve(opts['--reference-audio']), sampleRate) : undefined;
   const report = verifySfxEvents({ events, samples, referenceSamples, sampleRate, duration, windowMs: Number(opts['--window-ms'] ?? 50) });
+  if (opts['--reference-audio']) {
+    report.levels = await inspectAudioMix({
+      ffmpeg, audio: resolve(opts['--audio']), referenceAudio: resolve(opts['--reference-audio']),
+      stem: opts['--sfx-track'] ? resolve(opts['--sfx-track']) : undefined, events, duration,
+      windowMs: Number(opts['--level-window-ms'] ?? 80), stemGain: Number(opts['--sfx-gain'] ?? 1),
+    });
+    console.log(`双声道电平：${report.levels.events.length} 个事件窗，最终音轨真峰值 ${report.levels.truePeakDbtp ?? '静音'} dBTP`);
+  }
   if (opts['--out']) await import('node:fs/promises').then(fs => fs.writeFile(resolve(opts['--out']), `${JSON.stringify(report, null, 2)}\n`));
   if (report.status === 'skip') { console.log(report.reason); return; }
   console.log(`音效时点观察 ${report.status}：${report.hits}/${report.total} 个事件窗口检测到瞬变（包络窗 ${report.windowMs}ms）`);

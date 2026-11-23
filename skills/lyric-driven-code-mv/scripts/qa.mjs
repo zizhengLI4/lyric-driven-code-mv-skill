@@ -35,6 +35,55 @@ export function collectSampleTimes({ duration, fps, scenes = [], music = {}, sam
   return [...times].sort((a, b) => a - b);
 }
 
+export function buildShotReviewIndex(storyboard) {
+  const { duration, fps } = storyboard.project ?? {};
+  positive(duration, 'duration');
+  positive(fps, 'fps');
+  if (!Array.isArray(storyboard.scenes) || !storyboard.scenes.length) throw new Error('审片索引需要场景清单');
+  const numberAt = time => Math.ceil(time * fps - 1e-9);
+  const totalFrames = numberAt(duration);
+  const ids = new Set();
+  const scenes = storyboard.scenes.map(scene => {
+    if (typeof scene.id !== 'string' || !Number.isFinite(scene.start) || !Number.isFinite(scene.end) ||
+        scene.start < 0 || scene.end > duration + 1e-8 || scene.end <= scene.start) throw new Error('场景 ID 或时段无效');
+    if (!scene.id.trim() || ids.has(scene.id)) throw new Error('审片索引场景 ID 缺失或重复');
+    ids.add(scene.id);
+    const first = numberAt(scene.start), after = Math.min(totalFrames, numberAt(scene.end));
+    if (first >= after) throw new Error('场景 ' + scene.id + ' 在输出帧率下没有可见帧');
+    const points = new Map();
+    const add = (frame, label) => {
+      if (frame < 0 || frame >= totalFrames) return;
+      if (!points.has(frame)) points.set(frame, []);
+      points.get(frame).push(label);
+    };
+    const around = (frame, label) => {
+      add(frame - 1, label + ':before');
+      add(frame, label);
+      add(frame + 1, label + ':after');
+    };
+    add(first, 'start');
+    add(first + Math.floor((after - first - 1) / 2), 'middle');
+    add(after - 1, 'end');
+    for (const [i, event] of (scene.events ?? []).entries()) {
+      if (!Number.isFinite(event.at) || event.at < scene.start || event.at >= scene.end) continue;
+      around(Math.min(after - 1, numberAt(event.at)), 'event:' + (event.id ?? i + 1));
+    }
+    if (scene.exit?.type && scene.exit.type !== 'cut' && scene.exit.dur > 0) {
+      around(numberAt(scene.end - scene.exit.dur), 'transition-start');
+      add(numberAt(scene.end - scene.exit.dur / 2), 'transition-middle');
+    }
+    around(after, 'boundary');
+    const lyrics = (storyboard.lyrics ?? []).filter(cue => cue.start < scene.end && cue.end > scene.start)
+      .map(cue => ({ id: cue.id, start: cue.start, end: cue.end, text: cue.zh ?? cue.text }));
+    return {
+      id: scene.id, start: scene.start, end: scene.end, lyrics,
+      frames: [...points].sort(([a], [b]) => a - b).map(([frame, reasons]) => ({ frame, time: frame / fps, reasons })),
+      visualReview: 'pending',
+    };
+  });
+  return { schemaVersion: 1, duration, fps, totalFrames, scenes, use: '按零基帧号读取最终视频，逐镜核对后填写检查结果。' };
+}
+
 function frameHash(frame) {
   const { width, height, data } = frame ?? {};
   if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0 || width * height > 16777216) {
@@ -198,8 +247,20 @@ export async function runDeterminismQA(renderFrame, { times, frameOptions = {}, 
 }
 
 async function main(args) {
+  if (args[0] === '--review-index') {
+    const [, storyboard, outFlag, output, ...extra] = args;
+    if (!storyboard || outFlag !== '--out' || !output || extra.length) throw new Error('用法：node qa.mjs --review-index storyboard.json --out review-index.json');
+    assertNoPathAliases({ inputs: [storyboard], outputs: [output] });
+    const raw = await readFile(resolve(storyboard));
+    const report = buildShotReviewIndex(JSON.parse(raw.toString('utf8').replace(/^\uFEFF/, '')));
+    report.storyboardSha256 = createHash('sha256').update(raw).digest('hex');
+    await mkdir(dirname(resolve(output)), { recursive: true });
+    await writeFile(resolve(output), JSON.stringify(report, null, 2) + '\n');
+    console.log('已生成 ' + report.scenes.length + ' 镜审片索引：' + output);
+    return;
+  }
   if (args.includes('--help')) {
-    console.log('用法：node qa.mjs <frame.mjs> --duration 12 --fps 30 [--samples 16] [--storyboard file.json] [--times 0,5.1,6] [--warmup-frames 3] [--out qa.json]\n预热：每个时间点连续渲染 2 或 3 帧；默认 3，设为 0 禁用。模块可导出 async cleanup() 释放资源、frameOptionsForStoryboard(data) 应用分镜渲染配置。');
+    console.log('用法：node qa.mjs <frame.mjs> --duration 12 --fps 30 [--samples 16] [--storyboard file.json] [--times 0,5.1,6] [--warmup-frames 3] [--out qa.json]\n审片索引：node qa.mjs --review-index storyboard.json --out review-index.json\n预热：每个时间点连续渲染 2 或 3 帧；默认 3，设为 0 禁用。模块可导出 async cleanup() 释放资源、frameOptionsForStoryboard(data) 应用分镜渲染配置。');
     return;
   }
   const modulePath = args.shift();

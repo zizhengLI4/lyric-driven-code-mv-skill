@@ -5,7 +5,7 @@
 跟着走一遍，你会先验证渲染、字幕、音轨和媒体导出的技术链路，再接入自己的音乐和故事。
 第一次约 1.5 小时（大半花在装依赖），第二次 30 分钟。
 
-starter 默认输出是色块/网格检查卡，不是视频样片，也不提供角色、故事或视觉风格参考。要做成片效果规划，先读[像素 RPG 文字制作案例](skills/lyric-driven-code-mv/references/pixel-rpg-production-case.md)。
+starter 默认输出是色块/网格检查卡，不是视频样片，也不提供角色、故事或视觉风格参考。新歌的美术按[《四格相纸》实帧与制作基准](skills/lyric-driven-code-mv/references/four-frame-photo-case.md)原创设计。
 
 > 本文每条命令都在 Windows PowerShell + Node v24.16 + ffmpeg 9.0.2 实测跑过。
 > 文中所有耗时、帧数、BPM、偏差毫秒都是真实运行结果，不是示意值。
@@ -294,20 +294,17 @@ ffmpeg -v error -y -ss 37.2 -t 12 -i "你的歌.mp3" -ac 2 -ar 48000 -c:a pcm_s1
 | `draft` | **默认不烧任何画面提示**；要成片内可见才写 `project.draftMark:true` | 必须提供真实音频，缺文件不回退演示音乐 |
 | `verified` | 按分镜证据记录核对结果 | 必须提供真实音频 |
 
-### 5.4 导出
+### 5.4 先确认静帧，再导出
+
+确认同一版本歌词、歌曲背景与热评后，用实际画法完成本曲分镜、场景和人物。先把各镜静帧和每位主角全身远景、原生面部近景给用户看。用 --frame-final 生成带正式字幕的 PNG。场景和人物都通过后，按[静帧确认与逐镜审片](skills/lyric-driven-code-mv/references/production-review.md)保存 visual-review.json。
 
 ```powershell
-node skills/lyric-driven-code-mv/assets/templates/starter/export.mjs `
-  --storyboard work/sb-real.json --out "$PWD\work\real.mp4"
+$starter = 'skills/lyric-driven-code-mv/assets/templates/starter'
+node "$starter/export.mjs" --storyboard work/sb-real.json --frame-time 2.5 --frame-out work/scene-01.png --frame-final
+node "$starter/export.mjs" --storyboard work/sb-real.json --review work/visual-review.json --out work/real.mp4
 ```
 
-**实测输出**（2.7 秒，360 帧）：
-
-```
-PNG管道 360/360
-完成：...\work\real.mp4
-已核对12秒、1920×1080、H.264/AAC及全片解码。交付前仍需抽帧查看叙事和字幕。
-```
+真实歌曲的动态样片、帧序列和整曲都使用本版确认记录。导出后继续做逐镜和音频验收。
 
 ### 5.5 ⚠️ 用 `--storyboard` 时不能再用 CLI 覆盖 fps / 尺寸 / seed
 
@@ -461,48 +458,19 @@ written 24 beats; first 0.000484 last 11.500484; duration 12
 - 只有标了 `sync:"beat"` 的动作受 80 ms 约束。**别给所有动作都标**——末句余韵、留白、走位本来就该偏离网格，标了只会制造假警告。
 - `deltaMs` 为负是早于拍点，为正是晚于拍点。偏移量本身不判断好坏，判断的是你有没有意识到它偏了。
 
-### 6.5 加音效层（音效跟画面，不跟拍点）
+### 6.5 为可见动作设计提示音
 
-到这里画面已经踩在拍点上了。音效要加在**画面事件上**，不是加在拍点上——同一拍被强调两遍会发木。对着参考片量过：一条 209 秒的片子有 218 个瞬变（每秒约 1 个），只有 38% 落在 80 ms 内，中位偏 141 ms。
-
-音效写在分镜里，和事件同层：
+用三个锚点区分需求。visual 对应点按、拿起、接触或转场的画面时刻。beat 对应有音乐证据的重音。free 用于自然的环境或无固定触点的铺垫。波形开始用 at，观众感到动作落下用 hitAt。whoosh 可以先响，画面切过去时才到 hitAt。
 
 ```json
-"scenes": [{
-  "events": [{ "at": 3.0, "action": "数字跳到 42", "sync": "beat" }],
-  "sfx":    [{ "at": 3.0, "type": "tick", "gain": 0.60 }]
-}]
+"sfx": [
+  { "id": "door-latch", "at": 2.95, "hitAt": 3.0, "anchor": "free", "type": "click", "gain": 0.6 }
+]
 ```
 
-`type` 只有八种：`tick`（刻度/数字）、`type`（打字机）、`click`（UI）、`whoosh`（转场）、`confirm`（勾选）、`error`（失败）、`riser`（预热）、`chime`（收束）。全部由代码合成，不含素材。`gain` 0–2，`pitch` 0.5–2。
+正式制作时，给每条提示音写事件、动作时点、材质、音色、余韵和复用动机。八种程序合成音色作为起点，快门、出票、鞋底、布料等按本曲做变奏。导出自动读取 project.sfx[] 与 scene.sfx[]，--sfx 可断言分镜里一定有音效。--sfx-gain 默认 0.85。复制 starter 到外部项目时使用 --sfx-script 指向 Skill 的合成模块，或项目已有实现。
 
-```powershell
-# 一条命令：合成音效 → 与音轨混音 → 编码
-node skills/lyric-driven-code-mv/assets/templates/starter/export.mjs --storyboard work/sb-real.json --audio 你的歌.wav --sfx --out work/final.mp4
-```
-
-默认权重 0.85（`--sfx-gain` 可调）。分镜里一个 sfx 都没写时它直接报错，不会悄悄漏掉音效。
-
-要单独拿音效轨或自己控权重，退回分步做：
-
-```powershell
-node skills/lyric-driven-code-mv/scripts/sfx.mjs --from-storyboard work/sb-real.json --out work/sfx.wav --report work/sfx-report.json
-ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1 0.85:normalize=0,alimiter=limit=0.95" -c:v copy -c:a aac -b:a 192k work/final.mp4
-```
-
-实测（12 秒示范片，9 个音效事件）：
-
-```
-音效轨 work/sfx.wav｜9 个事件 / 每分钟 45 个｜峰值 0.4002｜裁掉 1 个越界事件
-```
-
-「裁掉 1 个」是片尾 11.5 s 的 `chime`（850 ms）越过 12 s 被截断，渲染器在首尾各有 8 ms 淡入淡出，不会爆音。
-
-**怎么确认音效真的在那一刻**：对比"只有音乐"与"音乐+音效"两条轨，看差值是否起于该时刻——事件前 100 ms 应近乎静音，事件窗口内有明显能量，事件后衰减。实测 9 个事件全部命中（前 0.0000 / 内 0.0240 / 后 0.0001）。三段差不多大就说明音效铺满了整段，没有起音点。
-
-细节与八种音效的用法见 [音效层与卡点](skills/lyric-driven-code-mv/references/sfx-and-beat.md)。
-
----
+导出旁车的 sfx.expected、sfx.mixed 和 sfx.finalMix 显示计划、合成和最终音轨测量。指定与音乐接近时核对同窗双声道电平。近静音看绝对响度。差分包含编码与限幅误差，最后听实际 AAC。 [详细音效说明](skills/lyric-driven-code-mv/references/sfx-and-beat.md)
 
 ## 7. 三档校验
 
@@ -594,7 +562,7 @@ ffmpeg -v error -y -i outputs/my-mv.mp4 -vf "fps=2" work/check/s_%03d.png
 ffmpeg -v error -y -ss 5.55 -i outputs/my-mv.mp4 -frames:v 1 work/check/transition.png
 ffmpeg -v error -y -ss 11.9 -i outputs/my-mv.mp4 -frames:v 1 work/check/ending.png
 
-# 5) 可读变化密度：最长空窗超过 12 秒就该补变化，别加镜头
+# 5) 可读变化密度：复核超过 12 秒的空窗，判断是否为有效留白
 node skills/lyric-driven-code-mv/scripts/hud-density.mjs work/sb-real.json --max-gap 12
 
 # 6) 平台安全区：字幕底边与 HUD 关键读数必须躲开参考线
@@ -617,7 +585,7 @@ duration=12.000000
 
 `pix_fmt=yuv420p` 必须对，否则很多播放器和平台放不出来。
 
-第 5 条实测在 12 秒示例上的输出：`可读变化点 14 个（每分钟 70 个）/ 最长空窗 2.3s（阈值 12s）`——它按切镜、材质、HUD、事件、字幕五类变化算，报的是"观众多久没看到新东西"。第 6 条出一张叠了顶部、底部 8.5%、右侧 6.5%、4:3、9:16 五条参考线的图，用眼睛确认字幕底边和 HUD 没压进去；这两条查完，再去看下面三件人眼的事。
+逐镜正式审片按[静帧确认与逐镜审片](skills/lyric-driven-code-mv/references/production-review.md)生成索引和原尺寸帧。第 5 条实测在 12 秒示例上的输出：`可读变化点 14 个（每分钟 70 个）/ 最长空窗 2.3s（阈值 12s）`——它按切镜、材质、HUD、事件、字幕五类变化算，报的是"观众多久没看到新东西"。第 6 条出一张叠了顶部、底部 8.5%、右侧 6.5%、4:3、9:16 五条参考线的图，用眼睛确认字幕底边和 HUD 没压进去；这两条查完，再去看下面三件人眼的事。
 
 **然后做三件机器查不出来的事：**
 
@@ -724,7 +692,7 @@ my-mv/
    （校验器会用几十条错误提醒你漏改了什么）。
 3. **每次只改一处**，改完用 `--frame-time` 看单帧，或 `--width 640 --height 360 --fps 10` 快跑。
 4. **改 `duration` 时同步改**：`lyrics`、`music.beats`、`music.sections`、`scenes.end`、`scenes.events.at`。
-5. **全片渲染前**，用本项目的角色卡、关键帧与动作条确认风格统一，再渲全部；starter 的技术检查画面不作风格标准。
+5. **动态渲染前**，用本项目实际绘制入口的关键帧、自检结果与动作条，分别请用户确认场景和人物。按确认范围渲染，并逐镜复核。
 6. **长时间渲染用 `--frames-dir`**，中断了 `--resume`，别从头再来。
 
 ---

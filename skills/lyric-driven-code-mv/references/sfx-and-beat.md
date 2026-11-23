@@ -81,7 +81,7 @@ sfx.at = sfx.hitAt - peakOffset
 导出入口：
 
 ```powershell
-node assets/templates/starter/export.mjs --storyboard work/storyboard.json --audio path/to/song.wav --sfx --out work/final.mp4
+node assets/templates/starter/export.mjs --storyboard work/storyboard.json --review work/visual-review.json --out work/final.mp4
 ```
 
 ## 验证边界
@@ -102,7 +102,17 @@ node assets/templates/starter/export.mjs --storyboard work/storyboard.json --aud
 - [FFmpeg `amix` filter](https://ffmpeg.org/ffmpeg-filters.html#amix)：将独立音轨合成输出；需要在实际混音后检查增益与峰值。
 - [djj45/mv-kit 声音交付说明](https://github.com/djj45/mv-kit/blob/main/docs/SOUND-DELIVERY.md)：独立音轨、时间线交付与输出后同步回测的公开工程示例；它与本 Skill 的程序合成器是不同实现。
 
-### 提示音的可听度
+### 按事件核对实际导出
+
+starter 默认读分镜内的音效，源文件在项目里与分镜同版时可直接导出。素材清单 sfx 记录预期数、实际合成数、使用的事件 ID、at 和 hitAt。最终 AAC 测量落在 sfx.finalMix。--frames-dir 可保留 music-only.wav、sfx.wav 和混音 WAV，便于重查。第三方入口用同时间起点的 BGM-only、最终 MP4 和可得的独立 SFX 轨做等价复核。
+
+```sh
+node scripts/verify-sfx.mjs --audio work/final.mp4 --reference-audio work/music-only.wav --sfx-track work/sfx.wav --sfx-gain 0.85 --storyboard work/storyboard.json --out work/sfx-review.json
+```
+
+levels.events 以 80 ms 为默认窗，记录波形起声和独立落点的左右声道与合计 RMS，单位 dBFS。用 stemRelativeDb 看限幅前按权重进入总线的提示音，用 differenceRelativeDb 看 AAC 解码后减同期 BGM 的差分。两轨同起点同长度，近静音段看绝对电平。AAC 压缩、限幅、同时响的其他提示音和时基偏差都会影响差分。有 SFX 设计时务必回听最终文件。峰值来自解码音轨的真峰值测量。
+
+## 提示音的可听度
 
 “提示音听不到”可能发生在排程、导出选轨或原曲掩蔽三个环节。先检查最终 MP4 实际音轨，对齐同版本原曲和已知的混音母带，在提示声起声窗口做差分，并检查差分与独立音效轨的相关性。若声音已混入，报告其与同期音乐的相对电平，并注明窗口、声道及量法。
 

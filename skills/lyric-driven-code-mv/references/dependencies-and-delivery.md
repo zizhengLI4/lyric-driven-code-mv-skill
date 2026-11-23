@@ -28,6 +28,8 @@ node work/my-mv/export.mjs --preview
 
 预览地址由命令输出，静音查看首帧、跳播与转场。导出及单帧检查按 starter 当前说明执行；接歌曲时从自己的分镜 JSON 配置 `--storyboard`，音轨记录应描述实际使用的文件。已有工程沿用自己的渲染器与单帧入口，不为获得第一帧另建完整渲染系统。
 
+需要正式画幅和字幕时给单帧命令加 --frame-final。实际歌曲的动态与批量写帧须有[场景和人物定版记录](production-review.md)。Pillow 供使用它的 Python 辅助脚本及 RPG 示例。用当前 shell 的 python -c "import PIL" 验证。FFmpeg 与 FFprobe 可从本机 PATH 取用，也接受 FFMPEG_PATH、FFPROBE_PATH。若找得到但不能执行，保留返回码和拒绝路径，报告实际阻碍。调用额外安装、下载或服务之前说明其用途与所需权限。
+
 ## 渲染与恢复
 
 每帧由时间求值。HyperFrames 时间线可 seek；Remotion 用当前帧与固定种子；starter 的 `renderFrame(t)` 输出低分辨率 RGBA，Node zlib 编码 PNG，FFmpeg 整数放大后烧入高分辨率 ASS 字幕。`--storyboard` 统一项目参数、时点和音乐状态；仅 `illustrative` 且没有指定音频时合成原创演示节奏，其他状态使用真实音频。
@@ -102,6 +104,10 @@ node path/to/skill/scripts/qa.mjs frame.mjs --duration 12 --fps 30 --storyboard 
 没有听觉通道时可交付上述结构比较、抽帧结果和具体 `pendingChecks`，保持 `draft`，把听感卡点列为未确认。检查去字幕叙事时先关闭字幕观看并记录能复述出的行动与结果；仅“字幕和画面相符”的抽帧结论不等于已做这项检查。
 
 具备条件时完整播放，核对歌曲版本、源偏移、动作落点、逐字填充、异常静音/削波与留白；不能播放/试听时如实写检查范围，将待核对区间和内容记录为 `music.pendingChecks` 后交付 `draft`。交付记录包含实际目标、所查帧/落点、技术参数、许可/署名、状态及未解决项，不能用“FFprobe 正常”声称整片语义与音乐同步已通过。
+
+### 核对当前版本、歌词、动作和提示音
+
+记录录音与分镜版本、sourceOffset、歌词 ID、机器推定时点与置信度、人工实际听到的词头/拖音界线、画面动作峰值和预期触点、实际复查时段、待查原因。音乐每段至少核对开头、高潮、句尾和留白。需要检查转场的丝滑程度时记录输出 FPS 与实际重复帧或变化观察，测试关键动作及字幕在切点前后的连续性。
 
 ## 官方参考
 

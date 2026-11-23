@@ -20,7 +20,7 @@ export function encodePNG({ width, height, data }) {
 }
 
 /** 恢复导出只接受本模块支持的完整 RGBA8 PNG，检查 CRC、尺寸与解压行。 */
-export function inspectPNG(input) {
+export function inspectPNG(input, { template = true } = {}) {
   const png = Buffer.isBuffer(input) ? input : Buffer.from(input);
   if (png.length < 45 || !png.subarray(0, 8).equals(signature)) throw new Error('无效 PNG 签名');
   let width, height, ended = false, first = true, offset = 8; const parts = [];
@@ -34,12 +34,17 @@ export function inspectPNG(input) {
     if (type === 'IHDR') {
       if (!first || length !== 13) throw new Error('PNG IHDR 错误');
       width = data.readUInt32BE(0); height = data.readUInt32BE(4);
-      if (!width || !height || width > 4096 || height > 4096 || data[8] !== 8 || data[9] !== 6 || data[10] || data[11] || data[12]) throw new Error('PNG 须为非交错 RGBA8 且尺寸不超过4096');
+      if (!width || !height || width > 7680 || height > 7680 || ![0, 2, 3, 4, 6].includes(data[9]) ||
+          ![1, 2, 4, 8, 16].includes(data[8]) || data[10] || data[11] || data[12] > 1) throw new Error('PNG IHDR 格式或尺寸错误');
+      if (template && (width > 4096 || height > 4096 || data[8] !== 8 || data[9] !== 6 || data[12])) {
+        throw new Error('PNG 须为非交错 RGBA8 且尺寸不超过4096');
+      }
     } else if (type === 'IDAT') parts.push(data);
     else if (type === 'IEND') { if (length || end !== png.length) throw new Error('PNG IEND 错误'); ended = true; }
     offset = end; first = false;
   }
   if (!ended || !parts.length) throw new Error('PNG 不完整');
+  if (!template) return { width, height };
   const expected = (width * 4 + 1) * height;
   let rows; try { rows = inflateSync(Buffer.concat(parts), { maxOutputLength: expected }); } catch { throw new Error('PNG 解压失败'); }
   if (rows.length !== expected) throw new Error('PNG 解压行尺寸不符');

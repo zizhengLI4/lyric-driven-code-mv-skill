@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, mkdtemp, readFile, writeFile, rename, readdir, rm, stat, realpath } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, writeFile, rename, readdir, rm, stat, realpath } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, resolve, join, basename, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -9,6 +9,8 @@ import { once } from 'node:events';
 import { renderFrame, WIDTH, HEIGHT, DURATION, DEFAULT_SEED, CAPTIONS, SCENE_RENDERERS } from './frame.mjs';
 import { createTimeline, captionSegmentsAtTime, DEFAULT_CAPTION_STYLE } from './timeline.mjs';
 import { encodePNG, inspectPNG } from './png.mjs';
+import { checkVisualReview, STARTER_VISUAL_SOURCES } from './review-gate.mjs';
+import { inspectAudioMix } from './audio-review.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const HELP = `用法：node export.mjs [参数]
@@ -19,7 +21,9 @@ const HELP = `用法：node export.mjs [参数]
   --storyboard PATH   分镜JSON作为时间/字幕/转场/项目参数真源
   --audio PATH        重定位JSON记录的同一音轨，不能替换为另一首歌
   --frame-time N      导出指定成片秒的世界层单帧，无需FFmpeg
-  --frame-out PATH    配合--frame-time的PNG路径（384×216，不含ASS字幕）
+  --frame-out PATH    配合--frame-time的PNG路径（默认世界层）
+  --frame-final       单帧按正式尺寸合成字幕，使用 FFmpeg/libass
+  --review PATH       当前分镜的用户场景与人物静帧确认记录（真实项目渲染必需）
   --width N           最终输出宽度，正偶数（默认1920）
   --height N          最终输出高度，正偶数（默认1080）
   --fps N             1–120 的整数（默认30）
@@ -32,7 +36,8 @@ const HELP = `用法：node export.mjs [参数]
   --font TEXT         已安装字体名称（Windows默认 Microsoft YaHei）
   --preview           启动共享纯帧模块的本地Canvas预览，Ctrl+C停止
   --port N            预览端口（默认8765）
-  --sfx               合成分镜里的 project.sfx[]/scene.sfx[] 并混入音轨，须配 --storyboard
+  --sfx               断言分镜含音效；默认自动读取 project.sfx[]/scene.sfx[]
+  --no-sfx            明确静默技术检查（只允许演示分镜）
   --sfx-script PATH   指定音效模块（默认 skill/scripts/sfx.mjs），便于复制 starter 后替换实现
   --sfx-gain N        音效相对音轨的权重，0–2（默认0.85）
   --help              显示帮助
@@ -41,18 +46,24 @@ const HELP = `用法：node export.mjs [参数]
     node export.mjs --out check.mp4 --width 640 --height 360 --fps 10
     node export.mjs --frames-dir frames --frames-only
     node export.mjs --frames-dir frames --resume --out demo.mp4
-    node export.mjs --storyboard sb.json --sfx --out mv.mp4
+    node export.mjs --storyboard sb.json --review visual-review.json --out mv.mp4
 未指定分镜时使用色块/网格技术检查画面。draft/verified分镜须提供音频；自定义scene.id须注册画法。已有框架工程请按README适配。
 `;
 
 export function parseArgs(argv) {
-  const c = { out: resolve('render-check.mp4'), width: 1920, height: 1080, fps: 30, seed: DEFAULT_SEED, duration: DURATION, storyboard: null, audio: null, provided: [], framesDir: null, resume: false, framesOnly: false, ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg', ffprobe: process.env.FFPROBE_PATH || 'ffprobe', font: process.platform === 'win32' ? 'Microsoft YaHei' : 'sans-serif', preview: false, port: 8765, sfx: false, sfxScript: null, sfxGain: 0.85, help: false };
-  const flags = { '--help': 'help', '--resume': 'resume', '--frames-only': 'framesOnly', '--preview': 'preview', '--sfx': 'sfx' };
-  const options = { '--out': 'out', '--storyboard': 'storyboard', '--audio': 'audio', '--frame-time': 'frameTime', '--frame-out': 'frameOut', '--width': 'width', '--height': 'height', '--fps': 'fps', '--seed': 'seed', '--frames-dir': 'framesDir', '--ffmpeg': 'ffmpeg', '--ffprobe': 'ffprobe', '--font': 'font', '--port': 'port', '--sfx-script': 'sfxScript', '--sfx-gain': 'sfxGain' };
+  const c = { out: resolve('render-check.mp4'), width: 1920, height: 1080, fps: 30, seed: DEFAULT_SEED, duration: DURATION, storyboard: null, audio: null, provided: [], framesDir: null, resume: false, framesOnly: false, ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg', ffprobe: process.env.FFPROBE_PATH || 'ffprobe', font: process.platform === 'win32' ? 'Microsoft YaHei' : 'sans-serif', preview: false, port: 8765, sfx: false, noSfx: false, review: null, frameFinal: false, sfxScript: null, sfxGain: 0.85, help: false };
+  const flags = { '--help': 'help', '--resume': 'resume', '--frames-only': 'framesOnly', '--preview': 'preview', '--sfx': 'sfx', '--no-sfx': 'noSfx', '--frame-final': 'frameFinal' };
+  const options = { '--out': 'out', '--storyboard': 'storyboard', '--review': 'review', '--audio': 'audio', '--frame-time': 'frameTime', '--frame-out': 'frameOut', '--width': 'width', '--height': 'height', '--fps': 'fps', '--seed': 'seed', '--frames-dir': 'framesDir', '--ffmpeg': 'ffmpeg', '--ffprobe': 'ffprobe', '--font': 'font', '--port': 'port', '--sfx-script': 'sfxScript', '--sfx-gain': 'sfxGain' };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (flags[arg]) { c[flags[arg]] = true; continue; }
-    const key = options[arg]; if (!key) throw new Error(`未知参数：${arg}`);
+    if (Object.hasOwn(flags, arg)) {
+      if (c[flags[arg]]) throw new Error('重复参数：' + arg);
+      c[flags[arg]] = true;
+      continue;
+    }
+    if (!Object.hasOwn(options, arg)) throw new Error('未知参数：' + arg);
+    const key = options[arg];
+    if (c.provided.includes(key)) throw new Error('重复参数：' + arg);
     const value = argv[++i]; if (value === undefined || value.startsWith('--') || !value.trim()) throw new Error(`${arg} 缺少值`);
     c[key] = ['width', 'height', 'fps', 'port', 'frameTime', 'sfxGain'].includes(key) ? Number(value) : value;
     c.provided.push(key);
@@ -63,7 +74,9 @@ export function parseArgs(argv) {
   if (!Number.isInteger(c.port) || c.port < 1 || c.port > 65535) throw new Error('port 须为1–65535的整数');
   if (!Number.isFinite(c.sfxGain) || c.sfxGain < 0 || c.sfxGain > 2) throw new Error('--sfx-gain 须为 0–2 的有限数');
   if (c.sfx && !c.storyboard) throw new Error('--sfx须配--storyboard：音效写在分镜的 project.sfx[] 或 scene.sfx[] 里');
-  if (c.sfx && c.framesOnly && !c.framesDir) throw new Error('--sfx 与 --frames-only 须配 --frames-dir');
+  if (c.noSfx && c.sfx) throw new Error('--sfx 与 --no-sfx 不能混用');
+  if (c.review && !c.storyboard) throw new Error('--review 须配 --storyboard');
+  if (c.frameFinal && !c.frameOut) throw new Error('--frame-final 须配 --frame-time 与 --frame-out');
   if ((c.resume || c.framesOnly) && !c.framesDir) throw new Error('--resume / --frames-only 须配 --frames-dir');
   if (extname(c.out).toLowerCase() !== '.mp4') throw new Error('--out 须使用 .mp4 扩展名');
   if (/[,\r\n]/.test(c.font)) throw new Error('字体名称不能含逗号或换行');
@@ -78,6 +91,7 @@ export function parseArgs(argv) {
   c.out = resolve(c.out); if (c.framesDir) c.framesDir = resolve(c.framesDir);
   if (c.storyboard) c.storyboard = resolve(c.storyboard); if (c.audio) c.audio = resolve(c.audio);
   if (c.sfxScript) c.sfxScript = resolve(c.sfxScript);
+  if (c.review) c.review = resolve(c.review);
   // image2pipe 编码使用素材目录作为 cwd；先固定显式相对可执行路径。
   for (const key of ['ffmpeg', 'ffprobe']) if (/[\\/]/.test(c[key])) c[key] = resolve(c[key]);
   return c;
@@ -101,17 +115,18 @@ async function loadSfxModule(c = {}) {
     sfxModules.set(key, module);
     return module;
   } catch (error) {
-    throw new Error(`--sfx 找不到或无法加载音效模块：${key}。请检查路径，或用 --sfx-script PATH 指定包含 collectSfx/renderTimeline/encodeWav 的模块。${error.message}`);
+    throw new Error(`找不到或无法加载分镜音效模块：${key}。请检查路径，或用 --sfx-script PATH 指定包含 collectSfx/renderTimeline/encodeWav 的模块。${error.message}`);
   }
 }
 
 export async function loadProject(c) {
-  const result = { ...c, duration: DURATION, timeline: null, sfx: [], draftMark: null, audioPath: null, audioStart: 0, storyboardHash: null, audioHash: null, audioRecord: { path: 'generated:starter-rhythm', timebase: 'clip', provenance: 'original', license: 'Original demo audio generated by the template', credit: 'lyric-driven-code-mv starter', use: 'demo' } };
+  const result = { ...c, duration: DURATION, timeline: null, sfx: [], expectedSfx: 0, requiresVisualReview: false, draftMark: null, audioPath: null, audioStart: 0, storyboardHash: null, audioHash: null, audioRecord: { path: 'generated:starter-rhythm', timebase: 'clip', provenance: 'original', license: 'Original demo audio generated by the template', credit: 'lyric-driven-code-mv starter', use: 'demo' } };
   if (!c.storyboard) return result;
   let raw, data;
   try { raw = await readFile(c.storyboard); data = JSON.parse(raw.toString('utf8').replace(/^\uFEFF/, '')); }
   catch (error) { throw new Error(`分镜JSON读取失败：${error.message}`); }
   result.timeline = createTimeline(data, Object.keys(SCENE_RENDERERS));
+  result.requiresVisualReview = data.music.status !== 'illustrative' || data.project.visualReviewRequired === true;
   result.draftMark = { enabled: data.music.status === 'draft' && result.timeline.notice !== '', text: result.timeline.notice || null };
   for (const key of ['fps', 'width', 'height', 'seed']) {
     if (c.provided?.includes(key) && c[key] !== data.project[key]) throw new Error(`CLI ${key}与分镜project.${key}冲突`);
@@ -135,10 +150,18 @@ export async function loadProject(c) {
     }
     result.audioRecord = structuredClone(record);
   }
-  if (c.sfx === true) {
+  const sfxArrays = [data.project.sfx, ...data.scenes.map(scene => scene.sfx)].filter(value => value !== undefined);
+  if (sfxArrays.some(value => !Array.isArray(value) || value.some(event => !event || typeof event !== 'object' || Array.isArray(event)))) {
+    throw new Error('project.sfx / scene.sfx 须为音效事件对象数组');
+  }
+  result.expectedSfx = sfxArrays.reduce((count, events) => count + events.length, 0);
+  if (c.noSfx && result.requiresVisualReview) throw new Error('--no-sfx 只用于技术检查；真实项目按分镜混入提示音');
+  if (c.sfx === true && result.expectedSfx === 0) throw new Error('--sfx 已开启，但分镜里没有 project.sfx[] 或 scene.sfx[]');
+  if (!c.noSfx && result.expectedSfx && !c.frameOut && !c.preview) {
+    if (result.requiresVisualReview && c.sfxGain === 0) throw new Error('真实项目已安排提示音，--sfx-gain 须大于 0');
     const { collectSfx } = await loadSfxModule(c);
     result.sfx = collectSfx(data);
-    if (result.sfx.length === 0) throw new Error('--sfx 已开启，但分镜里没有 project.sfx[] 或 scene.sfx[]；写法见 references/sfx-and-beat.md');
+    if (result.sfx.length !== result.expectedSfx) throw new Error('音效模块返回的事件数与分镜不符');
   }
   return result;
 }
@@ -150,13 +173,47 @@ export async function exportFrame(c, log = console.log) {
   if (!c.frameOut || !Number.isFinite(c.frameTime) || c.frameTime < 0 || c.frameTime >= c.duration) throw new Error('--frame-time须位于[0,duration)，并提供--frame-out');
   await assertNoOutputInputAliases(c, 'frame');
   await mkdir(dirname(c.frameOut), { recursive: true });
-  await atomicWrite(c.frameOut, encodePNG(renderFrame(c.frameTime, frameOptions(c))));
-  log(`世界层单帧：${c.frameOut}（${WIDTH}×${HEIGHT}，${c.frameTime}成片秒；不含ASS字幕）`);
+  let png = encodePNG(renderFrame(c.frameTime, frameOptions(c)));
+  if (c.frameFinal) png = await compositeFinalFrame(c, png);
+  await atomicWrite(c.frameOut, png);
+  const { width, height } = inspectPNG(png, { template: !c.frameFinal });
+  log(`${c.frameFinal ? '正式字幕单帧' : '世界层单帧'}：${c.frameOut}（${width}×${height}，${c.frameTime}成片秒）`);
+
+}
+
+function finalVideoFilter(c) {
+  return `scale=${c.width}:${c.height}:flags=neighbor,ass=filename=subtitles.ass`;
+}
+
+async function compositeFinalFrame(c, png) {
+  const assets = await mkdtemp(join(dirname(c.frameOut), '.mv-static-'));
+  try {
+    await writeFile(join(assets, 'subtitles.ass'), createASS(c));
+    const result = spawnSync(c.ffmpeg, [
+      '-hide_banner', '-loglevel', 'warning', '-f', 'image2pipe', '-vcodec', 'png', '-i', 'pipe:0',
+      '-vf', `settb=AVTB,setpts=${c.frameTime}/TB,${finalVideoFilter(c)}`, '-frames:v', '1',
+      '-threads', '1', '-c:v', 'png', '-f', 'image2pipe', 'pipe:1',
+    ], { cwd: assets, input: png, windowsHide: true, timeout: 30000, maxBuffer: 256 * 1024 * 1024 });
+    const detail = result.stderr?.toString().trim() ?? '';
+    if (result.error || result.status !== 0) throw new Error(`FFmpeg 字幕静帧失败：${result.error?.message ?? detail}`);
+    checkSubtitleGlyphs(detail);
+    const image = inspectPNG(result.stdout, { template: false });
+    if (image.width !== c.width || image.height !== c.height) throw new Error('正式字幕静帧的输出尺寸不符');
+    return result.stdout;
+  } finally {
+    await rm(assets, { recursive: true, force: true });
+  }
+}
+
+async function confirmCurrentVisuals(c) {
+  if (!c.requiresVisualReview && !c.review) return null;
+  return checkVisualReview({ storyboardPath: c.storyboard, reviewPath: c.review, requiredSources: STARTER_VISUAL_SOURCES, expectedStoryboardHash: c.storyboardHash, expectedFont: c.font });
 }
 
 async function renderConfig(c) {
   const sourceHash = digest(Buffer.concat(await Promise.all(['frame-core.mjs', 'frame.mjs', 'timeline.mjs', 'png.mjs', 'export.mjs'].map(file => readFile(join(here, file))))));
   const config = { version: 2, duration: c.duration ?? DURATION, fps: c.fps, frameWidth: WIDTH, frameHeight: HEIGHT, outputWidth: c.width, outputHeight: c.height, seed: c.seed, font: c.font, sourceHash, storyboardHash: c.storyboardHash ?? null, audioHash: c.audioHash ?? null, audioStart: c.audioStart ?? 0 };
+  if (c.visualReview) config.visualReviewHash = c.visualReview.sha256;
   return { config, fingerprint: digest(JSON.stringify(config)), frameCount: Math.ceil(config.duration * c.fps - 1e-9), frames: {} };
 }
 
@@ -167,6 +224,12 @@ async function atomicWrite(path, data) {
 /** 断点恢复不把目录存在当作完成；配置及每个已有 PNG 均重新校验。 */
 export async function prepareFrames(c, log = console.log) {
   c = await loadProject(c);
+  c.visualReview = await confirmCurrentVisuals(c);
+  await assertNoOutputInputAliases(c);
+  return writeFrames(c, log);
+}
+
+async function writeFrames(c, log) {
   if (!c.framesDir) throw new Error('prepareFrames 需要 frames-dir');
   await mkdir(c.framesDir, { recursive: true });
   const manifest = await renderConfig(c), manifestPath = join(c.framesDir, 'render-config.json');
@@ -364,7 +427,7 @@ export function createASS(c) {
 }
 
 export async function assetManifest(c, audioFile) {
-  return { schemaVersion: 1, storyboardSha256: c.storyboardHash, musicStatus: c.timeline?.music.status ?? 'illustrative', draftMark: c.draftMark, audio: { declared: c.audioRecord, actualPath: c.audioPath ?? 'generated:starter-rhythm', sourceSha256: c.audioHash, renderedWavSha256: digest(await readFile(audioFile)), sourceStart: c.audioStart, duration: c.duration }, limitation: '哈希证明文件绑定；来源、许可和署名为提交者记录，未验证权利有效。片尾短署名不替代具体许可要求的完整发布说明。' };
+  return { schemaVersion: 1, storyboardSha256: c.storyboardHash, musicStatus: c.timeline?.music.status ?? 'illustrative', draftMark: c.draftMark, visualReview: c.visualReview ? { sha256: c.visualReview.sha256, reviewedAt: c.visualReview.reviewedAt, scenes: c.visualReview.scenes, actors: c.visualReview.actors } : null, audio: { declared: c.audioRecord, actualPath: c.audioPath ?? 'generated:starter-rhythm', sourceSha256: c.audioHash, renderedWavSha256: digest(await readFile(audioFile)), sourceStart: c.audioStart, duration: c.duration }, limitation: '哈希证明文件绑定；来源、许可和署名为提交者记录，未验证权利有效。片尾短署名不替代具体许可要求的完整发布说明。' };
 }
 
 async function fileTarget(path) {
@@ -403,13 +466,13 @@ async function sameFile(first, second) {
 }
 
 async function assertNoOutputInputAliases(c, mode = 'video') {
-  const inputs = [c.storyboard, c.audioPath, c.sfxScript].filter(Boolean);
+  const inputs = [c.storyboard, c.audioPath, c.sfxScript, c.review, ...(c.visualReview?.files ?? [])].filter(Boolean);
   const outputs = [];
   if (mode === 'frame') outputs.push(c.frameOut);
   else {
     if (!c.framesOnly) outputs.push(c.out, `${c.out}.assets.json`);
     if (c.framesDir) {
-      outputs.push(...['render-config.json', 'audio.wav', 'audio-mixed.wav', 'sfx.wav', 'subtitles.ass', 'asset-manifest.json'].map(name => join(c.framesDir, name)));
+      outputs.push(...['render-config.json', 'audio.wav', 'audio-mixed.wav', 'music-only.wav', 'sfx.wav', 'subtitles.ass', 'asset-manifest.json'].map(name => join(c.framesDir, name)));
       const framesDirectory = await canonicalPath(c.framesDir);
       const frameCount = Math.ceil((c.duration ?? DURATION) * c.fps - 1e-9);
       for (const input of inputs) {
@@ -469,8 +532,8 @@ export async function publishOutput(temporaryOut, out, records, move = rename) {
   } finally { if (!preserve) await rm(staged, { recursive: true, force: true }); }
 }
 
-function commandOutput(binary, args, label) {
-  const result = spawnSync(binary, args, { encoding: 'utf8', windowsHide: true, timeout: 15000, maxBuffer: 8 * 1024 * 1024 });
+function commandOutput(binary, args, label, timeout = 15000) {
+  const result = spawnSync(binary, args, { encoding: 'utf8', windowsHide: true, timeout, maxBuffer: 8 * 1024 * 1024 });
   if (result.error || result.status !== 0) throw new Error(`${label} 不可用：${result.error?.message ?? result.stderr?.trim() ?? `退出 ${result.status}`}`);
   return result.stdout + result.stderr;
 }
@@ -483,9 +546,15 @@ export function preflight(c) {
   commandOutput(c.ffprobe, ['-version'], 'ffprobe');
 }
 
+function checkSubtitleGlyphs(stderr) {
+  if (/Glyph .*not found|failed to find any fallback|fontselect.*failed/i.test(stderr)) {
+    throw new Error(`系统字体缺少字幕字符：${stderr.trim()}。请用 --font 指定已有中文字体；模板不会下载字体。`);
+  }
+}
+
 async function pipeFrames(c, assets, temporaryOut, log) {
   const count = Math.ceil(c.duration * c.fps - 1e-9);
-  const args = ['-hide_banner', '-loglevel', 'warning', '-y', '-f', 'image2pipe', '-framerate', String(c.fps), '-vcodec', 'png', '-i', 'pipe:0', '-i', 'audio.wav', '-vf', `scale=${c.width}:${c.height}:flags=neighbor,ass=filename=subtitles.ass`, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-t', String(c.duration), '-movflags', '+faststart', temporaryOut];
+  const args = ['-hide_banner', '-loglevel', 'warning', '-y', '-f', 'image2pipe', '-framerate', String(c.fps), '-vcodec', 'png', '-i', 'pipe:0', '-i', 'audio.wav', '-vf', finalVideoFilter(c), '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-t', String(c.duration), '-movflags', '+faststart', temporaryOut];
   const child = spawn(c.ffmpeg, args, { cwd: assets, windowsHide: true, stdio: ['pipe', 'ignore', 'pipe'] });
   let stderr = '', spawnError = null, pipeError = null;
   child.stderr.on('data', data => { stderr = (stderr + data.toString()).slice(-16000); });
@@ -501,7 +570,7 @@ async function pipeFrames(c, assets, temporaryOut, log) {
     child.stdin.end();
     const status = await finished;
     if (status.code !== 0 || spawnError || pipeError) throw new Error(`ffmpeg 编码失败（${status.code ?? status.signal}）：${stderr.trim() || spawnError?.message || pipeError?.message}`);
-    if (/Glyph .*not found|failed to find any fallback|fontselect.*failed/i.test(stderr)) throw new Error(`系统字体缺少字幕字符：${stderr.trim()}。请用 --font 指定已有中文字体；模板不会下载字体。`);
+    checkSubtitleGlyphs(stderr);
   } catch (error) {
     child.stdin.destroy(); if (child.exitCode === null) child.kill(); await finished;
     throw new Error(`PNG导出失败：${error.message}${stderr ? `\n${stderr.trim()}` : ''}`);
@@ -515,12 +584,18 @@ async function pipeFrames(c, assets, temporaryOut, log) {
 export async function mixSfx(c, assets, log = console.log) {
   const { encodeWav, renderTimeline } = await loadSfxModule(c);
   const { pcm, report } = renderTimeline(c.sfx, c.duration);
+  if (report?.events !== c.sfx.length || (Array.isArray(report.placed) &&
+      (report.placed.length !== c.sfx.length || report.placed.some(event => event.frames <= 0)))) {
+    throw new Error('音效模块实际合成的事件数与分镜不符');
+  }
   const sfxPath = join(assets, 'sfx.wav');
+  const music = join(assets, 'music-only.wav');
+  await copyFile(join(assets, 'audio.wav'), music);
   await atomicWrite(sfxPath, encodeWav(pcm));
   const mixed = join(assets, 'audio-mixed.wav');
-  commandOutput(c.ffmpeg, ['-v', 'error', '-y', '-i', join(assets, 'audio.wav'), '-i', sfxPath, '-filter_complex', `[0:a][1:a]amix=inputs=2:duration=first:weights=1 ${c.sfxGain}:normalize=0,alimiter=limit=0.95`, '-ar', '48000', '-ac', '2', '-c:a', 'pcm_s16le', mixed], '音效混音');
+  commandOutput(c.ffmpeg, ['-v', 'error', '-y', '-i', join(assets, 'audio.wav'), '-i', sfxPath, '-filter_complex', `[0:a][1:a]amix=inputs=2:duration=first:weights=1 ${c.sfxGain}:normalize=0,alimiter=limit=0.95:level=0:latency=1`, '-ar', '48000', '-ac', '2', '-c:a', 'pcm_s16le', mixed], '音效混音');
   await rename(mixed, join(assets, 'audio.wav'));
-  const clipped = report.clipped.length ? `；${report.clipped.length} 个越界事件被裁在片尾` : '';
+  const clipped = report.clipped?.length ? `；${report.clipped.length} 个越界事件被裁在片尾` : '';
   log(`音效 ${report.events} 个（每分钟 ${report.perMinute} 个）已混入音轨，权重 ${c.sfxGain}${clipped}`);
   return report;
 }
@@ -531,13 +606,17 @@ export async function verifyOutput(c, path) {
   const video = info.streams?.find(s => s.codec_type === 'video'), audio = info.streams?.find(s => s.codec_type === 'audio');
   const duration = c.duration ?? DURATION;
   if (!video || !audio || video.width !== c.width || video.height !== c.height || video.codec_name !== 'h264' || audio.codec_name !== 'aac' || video.pix_fmt !== 'yuv420p' || Math.abs(Number(info.format?.duration) - duration) > 1 / c.fps + 0.02 || !Number.isFinite(Number(audio.duration)) || Math.abs(Number(audio.duration) - duration) > 0.05) throw new Error('成片验收失败：时长、尺寸或音视频流不匹配');
-  commandOutput(c.ffmpeg, ['-v', 'error', '-i', path, '-f', 'null', '-'], 'ffmpeg 全片解码');
+  const [fpsNumerator, fpsDenominator] = String(video.avg_frame_rate).split('/').map(Number);
+  if (fpsNumerator / fpsDenominator !== c.fps) throw new Error('成片验收失败：输出帧率不符');
+  commandOutput(c.ffmpeg, ['-v', 'error', '-xerror', '-i', path, '-f', 'null', '-'], 'ffmpeg 全片解码', Math.max(15000, duration * 1500));
   return info;
 }
 
 export async function exportVideo(c, log = console.log) {
   c = await loadProject(c);
   await assertNoOutputInputAliases(c);
+  c.visualReview = await confirmCurrentVisuals(c);
+  if (c.visualReview) await assertNoOutputInputAliases(c);
   if (!c.framesOnly) await Promise.all([c.out, `${c.out}.assets.json`].map(fileTarget));
   preflight(c);
   if (c.audioPath) {
@@ -548,21 +627,42 @@ export async function exportVideo(c, log = console.log) {
   }
   let temporaryAssets = null, temporaryOut = null;
   try {
-    if (c.framesDir) await prepareFrames(c, log);
+    if (c.framesDir) await writeFrames(c, log);
     if (!c.framesOnly) await mkdir(dirname(c.out), { recursive: true });
     const assets = c.framesDir ?? (temporaryAssets = await mkdtemp(join(dirname(c.out), '.pixel-mv-assets-')));
     if (c.audioPath) commandOutput(c.ffmpeg, ['-v', 'error', '-y', '-ss', String(c.audioStart), '-i', c.audioPath, '-t', String(c.duration), '-vn', '-ar', '48000', '-c:a', 'pcm_s16le', join(assets, 'audio.wav')], '音轨裁剪');
     else await atomicWrite(join(assets, 'audio.wav'), synthesizeWAV(c.duration));
-    if (c.sfx.length) await mixSfx(c, assets, log);
+    const sound = c.sfx.length ? await mixSfx(c, assets, log) : null;
     await atomicWrite(join(assets, 'subtitles.ass'), createASS(c));
     const records = await assetManifest(c, join(assets, 'audio.wav'));
-    if (c.framesDir) await atomicWrite(join(assets, 'asset-manifest.json'), JSON.stringify(records, null, 2) + '\n');
-    if (c.framesOnly) { log(`已生成可恢复帧目录：${c.framesDir}`); return null; }
+    records.sfx = {
+      expected: c.expectedSfx, mixed: sound?.events ?? 0, gain: sound ? c.sfxGain : null,
+      status: sound ? 'mixed' : c.noSfx ? 'muted-technical-check' : 'none',
+      events: c.sfx.map(({ id, type, at, hitAt, anchor }, index) => ({
+        id: id ?? type + '-' + String(index + 1).padStart(2, '0'), type, at, hitAt: hitAt ?? at, anchor: anchor ?? null,
+      })),
+      clipped: sound?.clipped ?? [],
+    };
+    if (c.framesOnly) {
+      if (c.visualReview && (await confirmCurrentVisuals(c)).sha256 !== c.visualReview.sha256) throw new Error('渲染期间确认记录已变更，请核对后重试');
+      await atomicWrite(join(assets, 'asset-manifest.json'), JSON.stringify(records, null, 2) + '\n');
+      log(`已生成可恢复帧目录：${c.framesDir}`); return null; }
     temporaryOut = join(dirname(c.out), `.rendering-${process.pid}-${basename(c.out)}`);
     await pipeFrames(c, assets, temporaryOut, log);
     const info = await verifyOutput(c, temporaryOut);
     if ((await stat(temporaryOut)).size < 1) throw new Error('编码结果为空');
+    if (sound) {
+      records.sfx.finalMix = await inspectAudioMix({
+        ffmpeg: c.ffmpeg, audio: temporaryOut, referenceAudio: join(assets, 'music-only.wav'),
+        stem: join(assets, 'sfx.wav'), events: records.sfx.events, duration: c.duration, stemGain: c.sfxGain,
+      });
+      log(`最终 AAC 已测 ${records.sfx.finalMix.events.length} 个提示音窗口，真峰值 ${records.sfx.finalMix.truePeakDbtp ?? '静音'} dBTP。`);
+    }
     records.output = { path: c.out, sha256: digest(await readFile(temporaryOut)) };
+    if (c.visualReview && (await confirmCurrentVisuals(c)).sha256 !== c.visualReview.sha256) {
+      throw new Error('编码期间确认记录已变更，请核对后重试');
+    }
+    if (c.framesDir) await atomicWrite(join(assets, 'asset-manifest.json'), JSON.stringify(records, null, 2) + '\n');
     await publishOutput(temporaryOut, c.out, records); temporaryOut = null;
     log(`完成：${c.out}\n已核对${c.duration}秒、${c.width}×${c.height}、H.264/AAC及全片解码。交付前仍需抽帧查看叙事和字幕。`);
     return info;
@@ -573,7 +673,7 @@ export async function exportVideo(c, log = console.log) {
 }
 
 function preview(c) {
-  const files = new Map([['/', ['preview.html', 'text/html; charset=utf-8']], ['/preview.html', ['preview.html', 'text/html; charset=utf-8']], ['/frame.mjs', ['frame.mjs', 'text/javascript; charset=utf-8']], ['/timeline.mjs', ['timeline.mjs', 'text/javascript; charset=utf-8']]]);
+  const files = new Map([['/', ['preview.html', 'text/html; charset=utf-8']], ['/preview.html', ['preview.html', 'text/html; charset=utf-8']], ['/frame.mjs', ['frame.mjs', 'text/javascript; charset=utf-8']], ['/frame-core.mjs', ['frame-core.mjs', 'text/javascript; charset=utf-8']], ['/timeline.mjs', ['timeline.mjs', 'text/javascript; charset=utf-8']]]);
   const server = createServer(async (req, res) => {
     const path = new URL(req.url, 'http://127.0.0.1').pathname;
     if (path === '/project.json') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ timeline: c.timeline, duration: c.duration, seed: c.seed })); return; }
@@ -587,7 +687,16 @@ function preview(c) {
 }
 
 async function main() {
-  try { const c = parseArgs(process.argv.slice(2)); if (c.help) console.log(HELP); else if (c.frameOut) await exportFrame(c); else if (c.preview) preview(await loadProject(c)); else await exportVideo(c); }
+  try {
+    const c = parseArgs(process.argv.slice(2));
+    if (c.help) console.log(HELP);
+    else if (c.frameOut) await exportFrame(c);
+    else if (c.preview) {
+      const project = await loadProject(c);
+      await confirmCurrentVisuals(project);
+      preview(project);
+    } else await exportVideo(c);
+  }
   catch (error) { console.error(`导出失败：${error.message}`); process.exitCode = 1; }
 }
 

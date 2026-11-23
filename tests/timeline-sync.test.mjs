@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 
 const SCRIPT = resolve('skills/lyric-driven-code-mv/scripts/timeline-sync.py');
-const PY = process.platform === 'win32' ? 'python' : 'python3';
+const PY = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
 
 // 8 秒 / 8kHz 单声道 WAV：在给定时刻放短促脉冲，其余近乎静音。
 function writeWav(path, seconds = 8, sr = 8000, pulses = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]) {
@@ -48,7 +48,11 @@ const storyboard = (extra = {}) => ({
   chapters: [{ id: 'c1', start: 0, end: 8, title: '整段' }],
 });
 
-const run = (args) => spawnSync(PY, [SCRIPT, ...args], { encoding: 'utf8', timeout: 60000, windowsHide: true });
+const run = (args) => {
+  const result = spawnSync(PY, [SCRIPT, ...args], { encoding: 'utf8', timeout: 60000, windowsHide: true });
+  if (result.error) throw result.error;
+  return result;
+};
 
 const setup = (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'tl-sync-'));

@@ -17,7 +17,7 @@ test('export accepts a custom SFX module path and reports missing modules with a
   const dir = mkdtempSync(join(tmpdir(), 'sfx-module-'));
   try {
     const storyboard = join(dir, 'storyboard.json');
-    writeFileSync(storyboard, JSON.stringify({ schemaVersion: 1, timebase: 'clip', project: { duration: 1, fps: 1, width: 384, height: 216, seed: 'test', sourceOffset: 0, virtualWidth: 384, virtualHeight: 216, audio: { path: 'song.wav', timebase: 'clip' } }, music: { status: 'illustrative' }, scenes: [{ id: 'send', start: 0, end: 1, exit: { type: 'cut', dur: 0 } }], lyrics: [] }));
+    writeFileSync(storyboard, JSON.stringify({ schemaVersion: 1, timebase: 'clip', project: { duration: 1, fps: 1, sfx: [{ at: 0.25, type: 'tick' }], width: 384, height: 216, seed: 'test', sourceOffset: 0, virtualWidth: 384, virtualHeight: 216, audio: { path: 'song.wav', timebase: 'clip' } }, music: { status: 'illustrative' }, scenes: [{ id: 'send', start: 0, end: 1, exit: { type: 'cut', dur: 0 } }], lyrics: [] }));
     const c = parseArgs(['--storyboard', storyboard, '--sfx', '--sfx-script', join(dir, 'missing.mjs')]);
     await assert.rejects(loadProject(c), error => /--sfx-script/.test(error.message) && /检查路径|复制|指定/.test(error.message));
     const modulePath = join(dir, 'custom.mjs');

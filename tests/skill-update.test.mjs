@@ -92,8 +92,9 @@ test('制作说明匹配像素RPG目标风格并允许按范围跳过样片', ()
   const codeVisualText = readFileSync(join(skill, 'references/code-directed-visuals.md'), 'utf8');
   const pixelVisualText = readFileSync(join(skill, 'references/pixel-game-visuals.md'), 'utf8');
   const syncReviewText = readFileSync(join(skill, 'references/sync-review.md'), 'utf8');
-  assert.match(skillText, /样片作为可选质量关卡/);
-  assert.match(skillText, /完整的 00:00–01:06 开场演出/);
+  assert.match(skillText, /按需求选做动态试片/);
+  assert.match(skillText, /四格相纸.*画风与制作规格/);
+  assert.match(skillText, /分别记录用户对场景和人物的明确确认/);
   assert.match(productionText, /拆歌.*静帧.*样片.*扩成片/s);
   assert.match(productionText, /跳过样片.*静帧.*分镜/s);
   assert.match(analysisText, /普通朋友.*1:57/s);
@@ -122,7 +123,7 @@ test('参考片分析把普通朋友前段游戏演出作为完整目标并记�
   assert.match(productionText, /00:00–01:06/);
   assert.match(productionText, /对话.*HUD|HUD.*对话/s);
   assert.match(productionText, /拆歌.*静帧.*样片.*扩成片/s);
-  assert.match(productionText, /烟火.*HUD.*电话亭|电话亭.*HUD.*烟火/s);
+  assert.match(analysisText, /烟火.*HUD.*电话亭|电话亭.*HUD.*烟火/s);
   assert.match(pixelVisualText, /HUD.*行动|行动.*HUD/);
   assert.match(pixelVisualText, /状态.*因果|因果.*状态/);
 });

@@ -4,7 +4,7 @@
 
 不需要 npm 包、API Key、账号、外部服务或下载字体。需要本机已有 Node.js、ffmpeg（含 libx264、AAC、libass）和 ffprobe。模板不会安装软件。现有 HyperFrames、Remotion、Canvas 或其他框架工程应沿用原工程；通过纯帧接口适配所需能力，不强制替换框架。
 
-目录是扁平结构，方便网页上传或复制：`frame.mjs` 共享纯帧、`timeline.mjs` 加载与适配分镜、`png.mjs` 内置 PNG 编码、`export.mjs` 导出与本地预览、`preview.html` 浏览器预览、此说明。不要把生成的 MP4、WAV 或 PNG 上传到 skill 仓库。
+复制整个 starter 目录，保留 review-gate.mjs 和 audio-review.mjs。目录是扁平结构，方便网页上传或复制：`frame.mjs` 共享纯帧、`timeline.mjs` 加载与适配分镜、`png.mjs` 内置 PNG 编码、`export.mjs` 导出与本地预览、`preview.html` 浏览器预览、此说明。不要把生成的 MP4、WAV 或 PNG 上传到 skill 仓库。
 
 ## 运行
 
@@ -17,7 +17,7 @@ node export.mjs --out C:\你的输出目录\render-check.mp4
 node export.mjs --preview
 ```
 
-最后一条仅启动 `http://127.0.0.1:8765`，自行打开即可预览，Ctrl+C 停止；不会自动启动浏览器。不要直接用 `file://` 打开 HTML，浏览器可能阻止模块导入。预览不带声音。
+最后一条仅启动 `http://127.0.0.1:8765`，自行打开即可预览，Ctrl+C 停止；不会自动启动浏览器。不要直接用 `file://` 打开 HTML，浏览器可能阻止模块导入。预览不带声音。真实项目在静帧确认前使用下方的单帧入口，确认后可启动动态预览。
 
 只排查某个成片时点的画面时，可先导出世界层单帧，无需媒体工具：
 
@@ -25,7 +25,7 @@ node export.mjs --preview
 node export.mjs --frame-time 5.55 --frame-out C:\你的输出目录\world-frame.png
 ```
 
-`--frame-time` 使用成片秒，须在 `[0,duration)`；可与 `--storyboard` 配用。PNG 为384×216世界层，不含正式尺寸ASS字幕；检查字幕需要查看导出MP4的抽帧。单帧模式不能与预览、帧目录或恢复参数混用。
+`--frame-time` 使用成片秒，须在 `[0,duration)`；可与 `--storyboard` 配用。默认输出 384×216 世界层 PNG。加 --frame-final 使用相同 ASS 时间轴与字号输出正式尺寸静帧，需要 FFmpeg/libass。用户确认前可以用它检查字幕。单帧模式不能与预览、帧目录或恢复参数混用。
 
 默认 384×216 像素场景，以最近邻放大至 1920×1080，30 fps，360 帧，12 秒。小尺寸功能检查使用 640×360；正式像素稿建议输出网格的整数倍（如 1920×1080），避免不同宽度的像素列。导出先把 PNG 写入 ffmpeg `image2pipe`，不用把所有帧落盘；字幕在放大后由 ASS 绘制，音轨为 48 kHz 原创 WAV，最终编码 H.264 / yuv420p + AAC。文件编码及验收全部成功后才替换 `--out`。
 
@@ -69,19 +69,15 @@ fb.layer({
 `--storyboard <json>` 让 JSON 成为时间线与字幕的真源。`project.duration/fps/width/height/seed` 控制输出，`lyrics[].text`（或 `zh`）及可选 `en` 控制字幕，`scenes[].start/end/exit` 控制镜头边界和转场。逐词字幕可在 lyric cue 下加 `words[]`，具体时间与拼接规则见 [时间与分镜](../../../references/storyboard-and-timing.md)。CLI 显式给出与 JSON 冲突的 fps、尺寸或 seed 会失败；先在 JSON 修改这些参数。分镜时间全部为成片秒，`timebase` 固定 `clip`。本模板画法使用384×216虚拟网格，输出尺寸须为同一整数倍。
 
 ```powershell
-node export.mjs --storyboard C:\你的工程\storyboard.json --audio C:\你的素材\song.wav --out C:\你的输出\song-mv.mp4
-node export.mjs --storyboard C:\你的工程\storyboard.json --audio C:\你的素材\song.wav --preview
+node export.mjs --storyboard C:\你的工程\storyboard.json --frame-time 2.5 --frame-out C:\你的工程\scene-01.png --frame-final
+node export.mjs --storyboard C:\你的工程\storyboard.json --review C:\你的工程\visual-review.json --out C:\你的输出\song-mv.mp4
 ```
 
-`--sfx` 把分镜里的 `project.sfx[]` 与 `scene.sfx[]` 合成一条音效轨，按 `--sfx-gain`（默认 0.85）与音轨混在一起，一次导出直接得到带音效的成片：
-
-```powershell
-node export.mjs --storyboard C:\你的工程\storyboard.json --audio C:\你的素材\song.wav --sfx --out C:\你的输出\song-mv.mp4
-```
+用户确认本项目场景和人物后，按[确认记录格式](../../../references/production-review.md)填写 visual-review.json。真实歌曲的帧序列、短片和整曲都读该记录。传 --audio 只用于重定位同一文件。默认混入 project.sfx[] 与 scene.sfx[]，--sfx 用于要求该分镜至少有一条事件。复制到外部项目时，用 --sfx-script 指定 Skill 的 scripts/sfx.mjs 或实际的自定义音效模块。--no-sfx 用于演示分镜的静默技术检查。
 
 两层对齐关系见 [音效层与卡点](../../../references/sfx-and-beat.md)：visual/beat/free 锚点按事件选择，长音效可提前起声；beat 校验检查 `hitAt`，不把波形起点 `at` 误当落点。
 
-音效事件可用 `scripts/verify-sfx.mjs` 按 50 ms RMS 包络检查事件窗口；只提供混音音轨时，输出仅表示观察到瞬变，不能证明瞬变来自 SFX。若提供同起点、同采样率、同长度的 BGM-only 参考音轨，则会额外输出差分归因候选，仍须试听确认：
+音效事件可用 `scripts/verify-sfx.mjs` 按 50 ms RMS 包络检查事件窗口；只提供混音音轨时，输出仅表示观察到瞬变，不能证明瞬变来自 SFX。若提供同起点、同采样率、同长度的 BGM-only 参考音轨，则会额外输出差分候选、双声道 RMS 和真峰值。可加 --sfx-track 指独立音效轨。最终 AAC 与同期原曲、音效轨对照后再实际试听。
 
 ```powershell
 node ..\..\..\scripts\verify-sfx.mjs --audio C:\你的工程\mixed.wav --reference-audio C:\你的工程\music-only.wav --storyboard C:\你的工程\storyboard.json --window-ms 50 --out C:\你的工程\sfx-evidence.json
@@ -138,7 +134,7 @@ Windows 默认使用已有 `Microsoft YaHei`；可通过 `--font "已有字体�
 
 `mode:"scene-panel"` 会同时改变浏览器预览和 ASS 导出的歌词层：主歌词暖白、辅助行淡色、彩色描边、深色像素面板和角标装饰。`chapter.show` 会把 `chapters[].title` 显示为章节牌。未提供 `captionStyle` 时保留普通底部双语字幕，旧分镜兼容；该配置只改变视觉呈现，不会替代歌词校对或关键卡点确认。
 
-导出自动用 ffprobe 核对时长、尺寸、H.264/AAC及像素格式，并用 ffmpeg 解码全片。技术检查时抽帧看开头提示、转场边界、移动标记、最终帧和字幕暗板；这些结果不等于 MV 的故事、美术或音乐同步验收。
+导出自动用 ffprobe 核对时长、尺寸、实际帧率、H.264/AAC 及像素格式，并用 ffmpeg 解码全片。技术检查时看开头提示、转场边界、移动标记和字幕暗板。真实项目另外按[逐镜审片方法](../../../references/production-review.md)看最终 MP4，核素材清单里的确认记录和提示音。
 
 ```powershell
 ffprobe -v error -show_format -show_streams -of json C:\你的输出目录\render-check.mp4

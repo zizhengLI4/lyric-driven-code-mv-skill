@@ -9,7 +9,7 @@
   python minimal-renderer.py storyboard.json --probe 0 120 240   # 抽 3 帧 PNG，秒级
   python minimal-renderer.py storyboard.json                     # 渲全片到 work/silent.mp4
 
-只依赖 Pillow 和 ffmpeg（在 PATH 里）。
+静帧使用 Pillow，视频另需 FFmpeg。真实项目的静帧定版检查还需要 Node.js。
 
 三条硬规则（为什么这样写，见 ../references/render-pitfalls.md）：
   1. 先画在虚拟分辨率上，最后一次 NEAREST 整数倍放大。任何非整数缩放都会糊。
@@ -17,6 +17,8 @@
   3. 文字直接画在放大后的画面上。画在虚拟层再放大，34px 的字会变成 5x5 的砖块。
 """
 import argparse
+import math
+import os
 import json
 import os
 import shutil
@@ -376,6 +378,7 @@ def main(argv):
     parser.add_argument("storyboard", help="分镜 JSON 文件")
     parser.add_argument("--probe", nargs="+", type=int, metavar="FRAME", help="只输出指定帧序号的 PNG")
     parser.add_argument("--out", type=Path, help="视频输出路径；--probe 模式下为 PNG 输出目录")
+    parser.add_argument("--review", type=Path, help="当前分镜的场景和人物静帧确认记录")
     args = parser.parse_args(argv)
     if args.probe is not None:
         output_dir = args.out or Path("work/probe")
@@ -383,12 +386,12 @@ def main(argv):
     else:
         outputs = [args.out or Path("work/silent.mp4")]
     try:
-        assert_no_path_aliases(inputs=[args.storyboard], outputs=outputs)
+        assert_no_path_aliases(inputs=[args.storyboard, *([args.review] if args.review else [])], outputs=outputs)
     except ValueError as exc:
         raise SystemExit(str(exc))
     sbc = load(args.storyboard)
     p = sbc["project"]
-    total = int(round(p["duration"] * p["fps"]))
+    total = math.ceil(p["duration"] * p["fps"] - 1e-9)
 
     if args.probe is not None:
         if any(index < 0 or index >= total for index in args.probe):
@@ -404,10 +407,22 @@ def main(argv):
 
     out = args.out or Path("work/silent.mp4")
     guard_output_path(out)
+    if sbc.get("music", {}).get("status", "illustrative") != "illustrative" or p.get("visualReviewRequired") or args.review:
+        if args.review is None:
+            raise SystemExit("请先让用户分别确认场景与人物静帧，再传 --review PATH。")
+        checker = Path(__file__).resolve().parents[1] / "assets/templates/starter/review-gate.mjs"
+        node = shutil.which("node")
+        if not node:
+            raise SystemExit("找不到 Node.js。真实项目需要运行静帧确认检查。")
+        result = subprocess.run([node, checker, "--storyboard", args.storyboard, "--review", args.review,
+                                 "--source", Path(__file__).resolve()], check=False)
+        if result.returncode:
+            raise SystemExit(result.returncode)
     out.parent.mkdir(parents=True, exist_ok=True)
-    if not shutil.which("ffmpeg"):
-        raise SystemExit("找不到 ffmpeg，请先安装并确认它在 PATH 上（本脚本靠它把裸帧编成 MP4）。")
-    cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
+    ffmpeg = os.environ.get("FFMPEG_PATH") or shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise SystemExit("找不到 FFmpeg，请设置 FFMPEG_PATH 或将已有工具加入 PATH。")
+    cmd = [ffmpeg, "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
            "-s", f"{p['width']}x{p['height']}", "-r", str(p["fps"]), "-i", "-",
            "-an", "-c:v", "libx264", "-preset", "medium", "-crf", "18",
            "-pix_fmt", "yuv420p", out]
