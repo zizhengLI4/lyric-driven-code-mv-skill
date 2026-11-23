@@ -139,6 +139,27 @@ test('--json 报告带对齐口径与状态字段', t => {
   assert.equal(report.bpm_status, 'speculative');
 });
 
+test('--analysis 使用统一的局部拍点及证据，不再从同一音频另算一条拍网格', t => {
+  const { audio, sb, dir, png, json } = setup(t);
+  const analysis = join(dir, 'analysis.json');
+  const beatTimes = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
+  writeFileSync(analysis, JSON.stringify({
+    schemaVersion: 1, status: 'draft', timebase: 'clip', sourceOffset: 0,
+    duration: 8, sampleRate: 8000, beats: beatTimes,
+    beatDetails: beatTimes.map(at => ({ at, confidence: 0.9, evidence: 'observed' })),
+    energy: { envelope: [] }, tempo: { bpm: 120, status: 'estimated' },
+  }));
+  const r = run([audio, '--storyboard', sb, '-o', png, '--json', json, '--analysis', analysis, '--align', 'beats']);
+  assert.equal(r.status, 0, r.stderr);
+  const report = JSON.parse(readFileSync(json, 'utf8'));
+  assert.equal(report.beat_source, 'analyze-audio');
+  assert.equal(report.beats.length, beatTimes.length);
+  assert.deepEqual(report.beats, beatTimes);
+  assert.deepEqual(report.beatDetails.map(beat => beat.evidence), Array(beatTimes.length).fill('observed'));
+  assert.equal(report.alignment.beats.source, 'storyboard-music-beats');
+  assert.doesNotMatch(r.stdout, /speculative BPM/);
+});
+
 // ── BPM 对照：脚本估计 vs 分镜网格 ─────────────────────────────────
 // 起因是实测发现两个工具对同一首歌给出不同 BPM（125 vs 98.8 vs 正确的 144.1），
 // 谁照着错的那个数排拍点就重演「大部分没卡上」。脚本必须把分歧显式说出来。
@@ -221,7 +242,7 @@ test('beats 口径优先用分镜的 music.beats 作为参考点', t => {
   assert.equal(stats.within_80ms, 2);
 });
 
-test('分镜没有 music.beats 时 beats 口径退回脚本估计并如实标注', t => {
+test('分镜没有 music.beats 时 beats 口径复用 audio-analysis 报告并如实标注', t => {
   const dir = mkdtempSync(join(tmpdir(), 'tl-sync-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const audio = join(dir, 'clip.wav');
@@ -233,7 +254,7 @@ test('分镜没有 music.beats 时 beats 口径退回脚本估计并如实标注
   const r = run([audio, '--storyboard', sb, '-o', join(dir, 'n.png'), '--json', join(dir, 'n.json'), '--align', 'beats']);
   assert.equal(r.status, 0, r.stderr);
   const report = JSON.parse(readFileSync(join(dir, 'n.json'), 'utf8'));
-  assert.equal(report.alignment.beats.source, 'estimated-beats', '没有分镜网格时要标出这是脚本估的');
+  assert.equal(report.alignment.beats.source, 'audio-analysis-beats', '没有分镜网格时要标出来自共享音频分析');
 });
 
 test('PNG 与 JSON 输出分别拒绝覆盖音频或分镜输入', t => {

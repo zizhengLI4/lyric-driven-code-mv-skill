@@ -1,9 +1,11 @@
-# 从零做出一支歌词驱动代码 MV
+# 像素 MV 制作起步指南
 
 给**没写过视频代码、但会复制粘贴命令**的人。
 
-跟着走一遍，你会得到一条能播的 `mp4`：有画面、有音乐、有字幕，人物在按歌词做动作。
+跟着走一遍，你会先验证渲染、字幕、音轨和媒体导出的技术链路，再接入自己的音乐和故事。
 第一次约 1.5 小时（大半花在装依赖），第二次 30 分钟。
+
+starter 默认输出是色块/网格检查卡，不是视频样片，也不提供角色、故事或视觉风格参考。要做成片效果规划，先读[像素 RPG 文字制作案例](skills/lyric-driven-code-mv/references/pixel-rpg-production-case.md)。
 
 > 本文每条命令都在 Windows PowerShell + Node v24.16 + ffmpeg 9.0.2 实测跑过。
 > 文中所有耗时、帧数、BPM、偏差毫秒都是真实运行结果，不是示意值。
@@ -18,8 +20,8 @@
 - [0. 这东西是什么](#0-这东西是什么)
 - [1. 装依赖](#1-装依赖)
 - [2. 拿到仓库并装 skill](#2-拿到仓库并装-skill)
-- [3. 跑通那 12 秒](#3-跑通那-12-秒)
-- [4. 看懂那 12 秒怎么来的](#4-看懂那-12-秒怎么来的)
+- [3. 检查 12 秒渲染链路](#3-检查-12-秒渲染链路)
+- [4. 看懂技术检查画面](#4-看懂技术检查画面)
 - [5. 接入你自己的歌](#5-接入你自己的歌)
 - [6. 让机器帮你找拍点](#6-让机器帮你找拍点)
 - [7. 三档校验](#7-三档校验)
@@ -27,7 +29,7 @@
 - [9. 验收](#9-验收)
 - [10. 出错怎么办](#10-出错怎么办)
 - [11. 交付清单](#11-交付清单)
-- [附：从 12 秒做到整首](#附从-12-秒做到整首)
+- [附：从技术检查转到真实项目](#附从技术检查转到真实项目)
 
 ---
 
@@ -35,14 +37,14 @@
 
 一句话：**歌词决定画什么，音乐决定何时强调。**
 
-不是频谱可视化，不是文字跟着鼓点跳。是让歌里的一句话变成一个**没做成、但有了回应**的小任务：
+不是频谱可视化，也不是文字跟着鼓点跳。先把歌词落实为角色行动与可见后果。例如，若某句描写主角犹豫要不要联系一个人，可形成这样的账本：
 
 ```
-字幕：「送一盏小灯到对岸」
-目标：把载灯的纸船送到对岸
-行动：左岸人物推船下水
-反馈：水流拐弯，船漂到河心；右岸伸手接不到
-结果：船没抵达，但右岸点亮自己的灯回应
+歌词 ID：l014（使用项目中已校对的原文）
+目标：判断是否发送已写好的消息
+行动：打开聊天界面，输入后停在发送按钮上
+反馈：好友状态与当前消息状态保持可见
+结果：按实际歌词和后续剧情选择发送、删除或继续等待
 ```
 
 观众看到的是叙事，不是动效。这就是"歌词呼应"。
@@ -133,9 +135,9 @@ Copy-Item -LiteralPath './skills/lyric-driven-code-mv' -Destination $target -Rec
 
 ---
 
-## 3. 跑通那 12 秒
+## 3. 检查 12 秒渲染链路
 
-### 3.1 先跑默认演示（不碰任何文件）
+### 3.1 先导出技术检查卡（不碰任何文件）
 
 ```powershell
 node skills/lyric-driven-code-mv/assets/templates/starter/export.mjs --out "$PWD\work\demo.mp4"
@@ -148,10 +150,10 @@ PNG管道 1/360
 ...
 PNG管道 360/360
 完成：...\work\demo.mp4
-已核对12秒、1920×1080、H.264/AAC及全片解码。交付前仍需抽帧查看叙事和字幕。
+已核对12秒、1920×1080、H.264/AAC及全片解码。该文件只用于技术链路检查，不代表 MV 美术或故事验收。
 ```
 
-打开 `work/demo.mp4` 看一遍。**你现在已经有一条完整的片了。**
+打开 `work/demo.mp4`，检查技术卡、字幕和转场是否正常。之后要替换技术画面，再依据歌曲设计项目自己的镜头。
 
 ### 3.2 排错专用：只渲一帧（0.1 秒，不需要 ffmpeg）
 
@@ -199,7 +201,7 @@ node skills/lyric-driven-code-mv/scripts/qa.mjs `
 
 ---
 
-## 4. 看懂那 12 秒怎么来的
+## 4. 看懂技术检查画面
 
 打开 `skills/lyric-driven-code-mv/assets/templates/starter/frame.mjs`，只看三处。
 
@@ -209,7 +211,7 @@ node skills/lyric-driven-code-mv/scripts/qa.mjs `
 export const WIDTH = 384;
 export const HEIGHT = 216;
 export const DURATION = 12;
-export const DEFAULT_SEED = 'paper-boat-original-v1';
+export const DEFAULT_SEED = 'pixel-render-check-v1';
 export const CAMERA_LIMITS = Object.freeze({ minX: 120, maxX: 264, minY: 70, maxY: 146, minZoom: 0.75, maxZoom: 1.25 });
 ```
 
@@ -220,11 +222,10 @@ export const CAMERA_LIMITS = Object.freeze({ minX: 120, maxX: 264, minY: 70, max
 
 ### 4.2 画法注册表
 
-`SCENE_RENDERERS[scene.id]` 是唯一的画法注册表，内置 `send` 和 `receive`。
+`SCENE_RENDERERS[scene.id]` 是唯一的画法注册表。`send` 和 `receive` 是为既有分镜兼容的 ID，当前画面只用于检查帧绘制与转场。
 **分镜里出现新的 `scene.id` 但没注册画法 → 直接失败。** 报错会告诉你缺哪个。
 
-两个内置演出的动作节奏按**镜头局部时长归一化**，所以改镜头时窗会改变动作快慢。
-这是设计上的取舍：JSON 能调时间，但不能凭空产生新的人物动作，新动作要你自己写画法。
+检查标记的移动按**镜头局部时长归一化**，因此改镜头时窗会改变移动速度。JSON 能调时间，但不能自动产生项目所需的人物和场景内容，真实项目须实现自己的画法。
 
 ### 4.3 字幕
 
@@ -257,7 +258,7 @@ ffmpeg -v error -y -ss 37.2 -t 12 -i "你的歌.mp3" -ac 2 -ar 48000 -c:a pcm_s1
   "duration": 12, "fps": 30, "sourceOffset": 0,
   "width": 1920, "height": 1080,
   "virtualWidth": 384, "virtualHeight": 216,
-  "seed": "paper-boat-original-v1",
+  "seed": "pixel-render-check-v1",
   "audio": {
     "path": "song.wav", "timebase": "clip",
     "provenance": "external",
@@ -289,7 +290,7 @@ ffmpeg -v error -y -ss 37.2 -t 12 -i "你的歌.mp3" -ac 2 -ar 48000 -c:a pcm_s1
 
 | `status` | 画面上的提示 | 音轨要求 |
 |---|---|---|
-| `illustrative` | 开头烧入「演示时点 · 原创合成节奏」 | **拒绝显式音轨**，只用模板合成节奏 |
+| `illustrative` | 开头烧入技术检查提示 | **拒绝显式音轨**，只用模板合成节奏 |
 | `draft` | **默认不烧任何画面提示**；要成片内可见才写 `project.draftMark:true` | 必须提供真实音频，缺文件不回退演示音乐 |
 | `verified` | 按分镜证据记录核对结果 | 必须提供真实音频 |
 
@@ -395,10 +396,10 @@ beats: 24  [0.000457, 0.500457, 1.000457, ...]
   receive  6 - 12   nearest 6.000457  deltaMs  -0.457
 
 字幕起点
-  line-1      0.45 - 2.80   deltaMs  -50.457   送一盏小灯到对岸
-  line-water  3.00 - 5.00   deltaMs   -0.457   水流拐弯，我松开手
-  line-2      6.30 - 8.50   deltaMs -200.457   送一盏小灯到对岸
-  line-reply  8.70 - 11.70  deltaMs +199.543   未能抵达，也有回光
+  line-1      0.45 - 2.80   deltaMs  -50.457   我把迟来的邀请写好
+  line-street 3.00 - 5.00   deltaMs   -0.457   地图指向灯下的旧街
+  line-2      6.30 - 8.50   deltaMs -200.457   我把迟来的邀请写好
+  line-reply  8.70 - 11.70  deltaMs +199.543   把写好的邀请送出去
 
 summary.captionStarts: 平均绝对 112.73 ms，最大 200.46 ms
 ```
@@ -414,7 +415,7 @@ deltaSeconds = 你的起点 − 最近的机器候选拍点
 - 两个拍点距离相同时取**较早**的那个
 
 **字幕起点不必逐句贴拍。** 上表里 `line-reply` 晚 200 毫秒不是错误——
-末句要在"未能抵达"的余韵里收住，卡在拍上反而生硬。
+末句应留出歌词本身需要的收束空间，卡在拍上反而可能生硬。
 真正该关注的是**镜头切点**（上表两条都是 -0.457 毫秒，几乎完美）和你的关键动作。
 
 `status: "candidate-review"` 只描述这张图的性质，**不是音乐校对等级**，
@@ -716,14 +717,14 @@ my-mv/
 
 ---
 
-## 附：从 12 秒做到整首
+## 附：从技术检查转到真实项目
 
 1. **镜长由信息密度决定**，不设固定上限；建议每 8–12 秒至少出现一次可读变化（字幕、HUD、光线、材质、粒子或状态）。等待和留白是结果时，可以保留长镜头。装置、章节牌和 HUD 字段见 [装置与章节](skills/lyric-driven-code-mv/references/story-devices.md) 与 [HUD 与字幕](skills/lyric-driven-code-mv/references/hud-and-subtitles.md)。
 2. **先把分镜写满全程再渲**，不要边渲边加——时间一改，`lyrics`/`beats`/`events` 全要重算
    （校验器会用几十条错误提醒你漏改了什么）。
 3. **每次只改一处**，改完用 `--frame-time` 看单帧，或 `--width 640 --height 360 --fps 10` 快跑。
 4. **改 `duration` 时同步改**：`lyrics`、`music.beats`、`music.sections`、`scenes.end`、`scenes.events.at`。
-5. **全片渲染前**，先确认 3–4 个关键镜头的风格统一，再渲全部。
+5. **全片渲染前**，用本项目的角色卡、关键帧与动作条确认风格统一，再渲全部；starter 的技术检查画面不作风格标准。
 6. **长时间渲染用 `--frames-dir`**，中断了 `--resume`，别从头再来。
 
 ---

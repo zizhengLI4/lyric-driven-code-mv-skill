@@ -235,3 +235,31 @@ test('恢复导出核对配置及每个已存PNG尺寸，拒绝混用和损坏',
   writeFileSync(join(directory, 'frame-000000.png'), encodePNG({ width: 2, height: 2, data: new Uint8ClampedArray(16) }));
   await assert.rejects(() => prepareFrames({ ...config, resume: true }, () => {}), /尺寸/);
 });
+
+test('starter 时间线保留词级时点并按同一状态切分预览文字', async () => {
+  const source = JSON.parse(readFileSync(new URL('../../../assets/storyboard-example.json', base), 'utf8'));
+  source.lyrics[0].text = 'Turn back now';
+  source.lyrics[0].words = [
+    { text: 'Turn ', start: 1, end: 2 },
+    { text: 'back', start: 2.2, end: 3 },
+    { text: ' now', start: 3.5, end: 4 },
+  ];
+  const { createTimeline, captionSegmentsAtTime } = await import(new URL('timeline.mjs', base));
+  const cue = createTimeline(source).captions[0];
+  assert.deepEqual(cue.words, source.lyrics[0].words);
+  assert.deepEqual(captionSegmentsAtTime(cue, 0.9).map(run => run.state), ['upcoming', 'upcoming', 'upcoming']);
+  assert.deepEqual(captionSegmentsAtTime(cue, 1.5).map(run => run.state), ['active', 'upcoming', 'upcoming']);
+  assert.deepEqual(captionSegmentsAtTime(cue, 2.1).map(run => run.state), ['played', 'upcoming', 'upcoming']);
+  assert.deepEqual(captionSegmentsAtTime(cue, 2.5).map(run => run.state), ['played', 'active', 'upcoming']);
+  assert.deepEqual(captionSegmentsAtTime(cue, 3.2).map(run => run.state), ['played', 'played', 'upcoming']);
+  assert.deepEqual(captionSegmentsAtTime(cue, 3.7).map(run => run.state), ['played', 'played', 'active']);
+  assert.deepEqual(captionSegmentsAtTime(cue, 4.1).map(run => run.state), ['played', 'played', 'played']);
+});
+
+test('starter 时间线拒绝无法映射到可见歌词的词级字幕', async () => {
+  const source = JSON.parse(readFileSync(new URL('../../../assets/storyboard-example.json', base), 'utf8'));
+  source.lyrics[0].text = 'Keep the light';
+  source.lyrics[0].words = [{ text: 'Keep a light', start: 0.9, end: 1.4 }];
+  const { createTimeline } = await import(new URL('timeline.mjs', base));
+  assert.throws(() => createTimeline(source), /words.*重建|拼接/);
+});

@@ -9,7 +9,7 @@
     "height": 1080,
     "virtualWidth": 384,
     "virtualHeight": 216,
-    "seed": "paper-boat-original-v1",
+    "seed": "pixel-sfx-check-v1",
     "audio": {
       "path": "demo-beat.wav",
       "timebase": "clip",
@@ -28,41 +28,41 @@
       }
     ]
   },
-  "note": "SFX 的 at 是波形起点，hitAt 是预期听感冲击点；whoosh 提前启动、峰值落在节拍。画面事件与 BGM 重拍的关系由 music.beats 校验；长音效单独核对 attack/peak。",
+  "note": "音效时序校验分镜：at 是波形起点，hitAt 是预期听感冲击点；转场 whoosh 可提前启动并在六秒镜头边界落点。所有字段用于技术测试，不规定 MV 故事或美术。",
   "device": {
-    "id": "river-message-system",
+    "id": "pixel-render-test",
     "type": "game-system",
-    "name": "隔岸寄送系统",
-    "purpose": "把主动发送、未抵达和灯光回应呈现为可读状态"
+    "name": "像素渲染检查界面",
+    "purpose": "检查色块、时间标记、字幕和画面状态是否随时间正确变化"
   },
   "lyrics": [
     {
       "id": "line-1",
       "start": 0.45,
       "end": 2.8,
-      "text": "送一盏小灯到对岸",
-      "en": "Send a small light across."
+      "text": "色块边界保持清晰",
+      "en": "Keep color edges crisp."
     },
     {
       "id": "line-water",
       "start": 3,
       "end": 5,
-      "text": "水流拐弯，我松开手",
-      "en": "The current turns; I let it go."
+      "text": "标记沿参考线移动",
+      "en": "Move along the reference line."
     },
     {
       "id": "line-2",
       "start": 6.3,
       "end": 8.5,
-      "text": "送一盏小灯到对岸",
-      "en": "Send a small light across."
+      "text": "色块边界保持清晰",
+      "en": "Keep color edges crisp."
     },
     {
       "id": "line-reply",
       "start": 8.7,
       "end": 11.7,
-      "text": "未能抵达，也有回光",
-      "en": "Still apart, our lights reply."
+      "text": "标记停在目标位置",
+      "en": "Stop at the target position."
     }
   ],
   "music": {
@@ -113,38 +113,38 @@
   },
   "actors": [
     {
-      "id": "p1",
+      "id": "subject-a",
       "costumes": [
-        "coral-coat"
+        "warm-marker"
       ]
     },
     {
-      "id": "p2",
+      "id": "subject-b",
       "costumes": [
-        "teal-coat"
+        "cool-marker"
       ]
     }
   ],
   "props": [
-    "paper-boat",
-    "boat-light",
-    "near-lamp",
-    "far-lamp"
+    "color-bars",
+    "pixel-grid",
+    "time-marker",
+    "reference-line"
   ],
   "chapters": [
     {
-      "id": "send-chapter",
+      "id": "palette-check",
       "start": 0,
       "end": 6,
-      "title": "第一次发送",
-      "meaning": "主动靠近后等待"
+      "title": "色块检查",
+      "meaning": "查看网格色条和像素边界"
     },
     {
-      "id": "reply-chapter",
+      "id": "motion-check",
       "start": 6,
       "end": 12,
-      "title": "收到回光",
-      "meaning": "未抵达但留下回应"
+      "title": "移动检查",
+      "meaning": "查看标记运动和末端位置"
     }
   ],
   "scenes": [
@@ -152,33 +152,31 @@
       "id": "send",
       "start": 0,
       "end": 6,
-      "meaning": "把心意送往远方，主动放手后等待",
-      "location": "左岸出发，同一条河的两岸",
-      "objective": "让载灯纸船抵达对岸",
-      "action": "p1 推船并松手，载灯纸船沿弯流向河心漂去",
-      "feedback": "纸船位移和水面倒影说明寄送开始，远岸灯仍暗",
-      "outcome": "纸船到达河心，尚未抵达；两岸人物仍分开",
+      "meaning": "检查网格、色条和标记起始段的像素边缘",
+      "location": "深色像素网格上的色条与水平参考线",
+      "objective": "确认色条可分辨，标记从起点平滑移动",
+      "action": "显示八种色块，移动标记经过参考线起始段",
+      "feedback": "标记位置与色块边缘清晰可见",
+      "outcome": "第一段检查完成，转场在六秒边界落点",
       "materialVariant": {
-        "id": "night-water",
-        "label": "夜水材质",
-        "change": "水面高光随纸船移动，机位保持不变"
+        "id": "palette-phase-a",
+        "label": "初始色板",
+        "change": "八种色块维持相同像素尺度和间距"
       },
       "hud": [
         {
-          "id": "distance",
-          "type": "bar",
-          "label": "抵达距离",
-          "value": 42,
-          "min": 0,
-          "max": 100,
-          "meaning": "纸船行动有进展但尚未抵达"
+          "id": "grid-status",
+          "type": "status",
+          "label": "网格",
+          "value": "清晰",
+          "meaning": "检查每个格点边缘"
         },
         {
-          "id": "send-status",
+          "id": "marker-status",
           "type": "status",
-          "label": "状态",
-          "value": "等待回应",
-          "meaning": "行动结束后的关系反馈"
+          "label": "标记",
+          "value": "移动中",
+          "meaning": "检查按时间求值的位置"
         }
       ],
       "lyricIds": [
@@ -187,24 +185,24 @@
       ],
       "actors": [
         {
-          "id": "p1",
-          "costume": "coral-coat"
+          "id": "subject-a",
+          "costume": "warm-marker"
         },
         {
-          "id": "p2",
-          "costume": "teal-coat"
+          "id": "subject-b",
+          "costume": "cool-marker"
         }
       ],
       "props": [
-        "paper-boat",
-        "boat-light",
-        "near-lamp",
-        "far-lamp"
+        "color-bars",
+        "pixel-grid",
+        "time-marker",
+        "reference-line"
       ],
       "events": [
         {
           "at": 1.5,
-          "action": "p1 开始松手，纸船离开左岸",
+          "action": "移动标记从参考线起点出发",
           "lyricIds": [
             "line-1"
           ],
@@ -212,7 +210,7 @@
         },
         {
           "at": 3,
-          "action": "纸船经过弯流，继续向河心漂移",
+          "action": "色条保持固定，标记继续移动",
           "lyricIds": [
             "line-water"
           ],
@@ -220,7 +218,7 @@
         },
         {
           "at": 5,
-          "action": "保持纸船未抵达的结果，为切换视角留白",
+          "action": "标记进入转场预备区，完成边界覆盖检查",
           "sync": "beat"
         }
       ],
@@ -232,7 +230,7 @@
           0.62
         ]
       },
-      "exitTransition": "波纹揭示右岸视角，下一镜固定 local=0 预卷",
+      "exitTransition": "短 whoosh 提前启动并在六秒边界落点",
       "sfx": [
         {
           "at": 1.5,
@@ -261,26 +259,26 @@
       "id": "receive",
       "start": 6,
       "end": 12,
-      "meaning": "重复寄送愿望，但对方未接到；新增隔岸回应的信息",
-      "location": "同一条河，摄像机略向右岸移动",
-      "objective": "p2 等纸船抵达并回应左岸",
-      "action": "p2 伸手，纸船被弯流推回；改用岸灯回应",
-      "feedback": "纸船回退，右岸灯亮起，水面产生两地光的联系",
-      "outcome": "纸船仍未抵达，两岸灯光隔水相望",
+      "meaning": "检查相同网格中标记的反向移动、状态提示和结尾停留",
+      "location": "沿用相同像素网格与色条，转场后移动方向反转",
+      "objective": "确认切镜后画面仍连续，标记停在参考线终点",
+      "action": "标记反向移动并在结尾到达指定位置",
+      "feedback": "屏幕状态与当前位置保持一致",
+      "outcome": "渲染、音效、转场和末端停留均可检查",
       "hud": [
         {
-          "id": "reply-status",
+          "id": "grid-status",
           "type": "status",
-          "label": "回应",
-          "value": "灯光已亮",
-          "meaning": "失败的寄送仍获得可见回应"
+          "label": "网格",
+          "value": "清晰",
+          "meaning": "持续核对像素格点"
         },
         {
-          "id": "attempts",
-          "type": "counter",
-          "label": "发送次数",
-          "value": 2,
-          "meaning": "重复行动带来新的信息"
+          "id": "marker-status",
+          "type": "status",
+          "label": "标记",
+          "value": "复位",
+          "meaning": "标记到达终点后停止"
         }
       ],
       "lyricIds": [
@@ -289,24 +287,24 @@
       ],
       "actors": [
         {
-          "id": "p2",
-          "costume": "teal-coat"
+          "id": "subject-a",
+          "costume": "warm-marker"
         },
         {
-          "id": "p1",
-          "costume": "coral-coat"
+          "id": "subject-b",
+          "costume": "cool-marker"
         }
       ],
       "props": [
-        "paper-boat",
-        "boat-light",
-        "near-lamp",
-        "far-lamp"
+        "color-bars",
+        "pixel-grid",
+        "time-marker",
+        "reference-line"
       ],
       "events": [
         {
           "at": 8,
-          "action": "p2 伸手尝试接船",
+          "action": "确认标记的反向移动轨迹",
           "lyricIds": [
             "line-2"
           ],
@@ -314,7 +312,7 @@
         },
         {
           "at": 9,
-          "action": "弯流使纸船在触岸前回退",
+          "action": "检查标记通过色条后的像素边缘",
           "lyricIds": [
             "line-reply"
           ],
@@ -322,7 +320,7 @@
         },
         {
           "at": 9.5,
-          "action": "p2 点亮岸灯回应，保持未抵达的事实",
+          "action": "标记到达参考线终点并更新状态",
           "lyricIds": [
             "line-reply"
           ],
@@ -330,7 +328,7 @@
         },
         {
           "at": 11.5,
-          "action": "字幕结束，留下河水与两岸灯光",
+          "action": "画面停留，核对末帧与时间点",
           "sync": "beat"
         }
       ],
@@ -338,13 +336,13 @@
         "type": "cut",
         "dur": 0
       },
-      "exitTransition": "片段结束，无额外第三镜或黑场",
+      "exitTransition": "技术检查结束，画面停在最后一个标记位置",
       "sfx": [
         {
           "at": 5.79,
           "type": "whoosh",
           "gain": 0.5,
-          "hitAt": 6.0,
+          "hitAt": 6,
           "anchor": "beat"
         },
         {

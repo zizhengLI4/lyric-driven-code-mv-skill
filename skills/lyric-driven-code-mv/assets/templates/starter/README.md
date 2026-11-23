@@ -1,6 +1,6 @@
-# 12 秒像素 MV 最小工程
+# 像素 MV 渲染链路检查模板
 
-这是原创技术演示《未抵达的灯》，用于检验纯帧、像素摄像机、转场、字幕与导出。双语句子是演示文案，时间是演示时点；默认 `audio.wav` 由代码原创合成，只演示节奏，不对应任何真实歌曲或歌词。开头会烧入“演示时点 · 原创合成节奏”。
+这是一个**技术检查夹具**，用于检验纯帧求值、像素摄像机、转场、字幕与导出。画面只有色块、网格和移动标记，双语句子也只是技术检查文案；默认音轨由代码合成，不对应任何真实歌曲或歌词。开头会烧入“渲染链路检查 · 合成节奏”。它不是 MV 样片，也不提供角色、故事或风格参考。开始真实项目时，应先依歌曲、角色和用户提供的风格替换检查画面及文案。
 
 不需要 npm 包、API Key、账号、外部服务或下载字体。需要本机已有 Node.js、ffmpeg（含 libx264、AAC、libass）和 ffprobe。模板不会安装软件。现有 HyperFrames、Remotion、Canvas 或其他框架工程应沿用原工程；通过纯帧接口适配所需能力，不强制替换框架。
 
@@ -13,7 +13,7 @@
 ```powershell
 node export.mjs --help
 node export.mjs --out C:\你的输出目录\check.mp4 --width 640 --height 360 --fps 10
-node export.mjs --out C:\你的输出目录\paper-boat-demo.mp4
+node export.mjs --out C:\你的输出目录\render-check.mp4
 node export.mjs --preview
 ```
 
@@ -33,7 +33,7 @@ node export.mjs --frame-time 5.55 --frame-out C:\你的输出目录\world-frame.
 
 ```powershell
 node export.mjs --frames-dir C:\你的输出目录\frames --frames-only
-node export.mjs --frames-dir C:\你的输出目录\frames --resume --out C:\你的输出目录\paper-boat-demo.mp4
+node export.mjs --frames-dir C:\你的输出目录\frames --resume --out C:\你的输出目录\render-check.mp4
 ```
 
 恢复时参数必须与首次一致，包括 fps、输出尺寸、seed、字体及源码；示例默认参数正好一致。保存的 `render-config.json` 对配置与源码做 SHA-256 指纹，并保存每帧索引、文件名和 PNG 字节 SHA-256。恢复逐帧核对可信哈希、PNG 签名、CRC、解压行和 384×216 尺寸，拒绝同尺寸错置、混用或损坏。缺失帧会重算，已有可信帧复用；旧目录或中断留下的图片若没有逐帧可信指纹会重新生成，不会静默复用。目录已存在不会被视为“已经完成”，更改参数应使用新目录。临时 WAV/ASS 与临时 MP4 在输出路径旁生成并清理；帧目录模式会保留演示 WAV、ASS、PNG 与配置供恢复。
@@ -58,7 +58,7 @@ fb.layer({
 
 `renderFrame(t)` 仅由绝对秒数、显式 seed 与可选配置决定。每帧重新建立缓冲；随机量按 seed+索引计算，不使用累积 PRNG、帧间缓存、`Date.now()` 或“上一帧状态”。乱序 seek 与先后渲染必须得到相同 RGBA。导出取 `i/fps`，`i=0..359`；`t=12` 只供预览保持最终状态，不额外导出一帧。负时间裁到 0，超出结尾裁到 12，NaN/Infinity 拒绝。
 
-世界矩形留边为 `[-192,576]×[-108,324]`，保证模板规定的摄像机范围：中心 x=120–264、y=70–146、zoom=0.75–1.25。FB 初始透明；世界真正覆盖视野四边，测试能够发现留边不足。自定义镜头越过该范围前，应重新计算世界留边；不要靠黑色清屏隐藏空洞。角色、纸船、灯、倒影与星空都走 FB 的同一摄像机变换。
+世界矩形留边为 `[-192,576]×[-108,324]`，保证模板规定的摄像机范围：中心 x=120–264、y=70–146、zoom=0.75–1.25。FB 初始透明；世界真正覆盖视野四边，测试能够发现留边不足。自定义镜头越过该范围前，应重新计算世界留边；不要靠清屏隐藏空洞。色块、网格与标记都走 FB 的同一摄像机变换。
 
 `renderScene` 会拒绝超出此摄像机范围的配置。底层 `FB.setCam` 也拒绝非有限坐标、绝对值超过1000000的中心及0.01–64之外的 zoom；图元坐标与半径同样有限并有上限。直线先裁剪再步进，圆只遍历落在视口内的范围，避免极端缩放或巨大半径造成无界循环。
 
@@ -66,7 +66,7 @@ fb.layer({
 
 ## 接入真实歌曲
 
-`--storyboard <json>` 让 JSON 成为时间线与字幕的真源。`project.duration/fps/width/height/seed` 控制输出，`lyrics[].text`（或 `zh`）及可选 `en` 控制字幕，`scenes[].start/end/exit` 控制镜头边界和转场。CLI 显式给出与 JSON 冲突的 fps、尺寸或 seed 会失败；先在 JSON 修改这些参数。分镜时间全部为成片秒，`timebase` 固定 `clip`。本模板画法使用384×216虚拟网格，输出尺寸须为同一整数倍。
+`--storyboard <json>` 让 JSON 成为时间线与字幕的真源。`project.duration/fps/width/height/seed` 控制输出，`lyrics[].text`（或 `zh`）及可选 `en` 控制字幕，`scenes[].start/end/exit` 控制镜头边界和转场。逐词字幕可在 lyric cue 下加 `words[]`，具体时间与拼接规则见 [时间与分镜](../../../references/storyboard-and-timing.md)。CLI 显式给出与 JSON 冲突的 fps、尺寸或 seed 会失败；先在 JSON 修改这些参数。分镜时间全部为成片秒，`timebase` 固定 `clip`。本模板画法使用384×216虚拟网格，输出尺寸须为同一整数倍。
 
 ```powershell
 node export.mjs --storyboard C:\你的工程\storyboard.json --audio C:\你的素材\song.wav --out C:\你的输出\song-mv.mp4
@@ -93,7 +93,7 @@ node ..\..\..\scripts\verify-sfx.mjs --audio C:\你的工程\mixed.wav --referen
 
 每次MP4导出生成同路径 `.mp4.assets.json`，保存声明的来源/许可、实际音轨与裁剪WAV哈希、裁切起点、分镜及输出哈希。帧目录另保留 `asset-manifest.json`。外部非 `original` 音轨有 `credit` 时，在最后最多4秒烧入“音乐：署名｜许可”短署名；完整来源、许可链接与修改说明保留在记录中，按具体许可补到发布说明或片尾并检查可读性。记录完整和哈希相同都不证明许可有效。
 
-`SCENE_RENDERERS[scene.id]` 是唯一画法注册表，内置 `send` 与 `receive`。两个内置演出按镜头局部时长归一化，换镜头时窗会改变实际动作节奏；事件中的文字描述仍需由对应画法实现，新 ID 缺画法会失败。JSON 能调整演出时间，不能自动产生新人物动作。完整分镜仍先用 `validate-storyboard.mjs --delivery` 校验叙事、事件、授权与音乐证据；导出另用自包含 `timeline.mjs` 校验实际可执行字段，复制模板后也能独立运行。
+`SCENE_RENDERERS[scene.id]` 是唯一画法注册表。内置的 `send` 与 `receive` 是既有示例分镜兼容 ID，对应的画面仅用于检查时间求值和转场，不代表故事或美术方向。真实项目应为实际 `scene.id` 实现画法。新 ID 缺画法会失败；JSON 可以调整时间，不能自动产生场景内容。完整分镜仍先用 `validate-storyboard.mjs --delivery` 校验叙事、事件、授权与音乐证据；导出另用自包含 `timeline.mjs` 校验实际可执行字段，复制模板后也能独立运行。
 
 本 skill 中另有 [12 个场景资产](../../scenes/README.md)，为 `window/leave/empty/turn/neon/street/shatter/lesson/night/dawn/path/lookback` 分别提供画法工厂；每个都可传入 `duration`、主体取景位置 `subject:{x,y}` 和颜色名到 RGB 的 `palette` 覆盖。`scripts/lrc.mjs --lrc song.lrc --offset 12 --storyboard storyboard.json` 会转换成 `lyrics[]`，推算结束时点，并为跨镜歌词生成 `allowSceneSplit`；`scripts/new-storyboard.mjs --preset narrative-12 --duration 90 --lyrics lyrics.json` 生成可填写的12镜骨架。
 
@@ -103,7 +103,7 @@ starter 当前实现通用分镜规范的执行子集：末镜仅支持 `exit:{t
 
 ## 两镜与转场
 
-0–6 秒：左岸人物目标是送灯到对岸，推船后松手；水流拐弯但船继续移动，结果到达河心。6–12 秒：右岸人物想等船抵达并伸手，船在触岸前被弯流推回；人物改用自己的岸灯回应，最终纸船仍停在两岸之间。第二次“送一盏小灯到对岸”新增目标受阻及隔岸回应，不能只重复第一镜动作。
+前 6 秒检查色块、网格与标记；后 6 秒反向移动标记并沿用同一调色板。此段只确认帧随时间变化、转场衔接和边缘覆盖，不演示歌词故事。
 
 ```javascript
 exit: { type: 'ripple', dur: 0.9, origin: [0.55, 0.62] }
@@ -114,7 +114,9 @@ exit: { type: 'ripple', dur: 0.9, origin: [0.55, 0.62] }
 
 ## 字幕与验收
 
-默认演示文案保存在 `CAPTIONS`；指定分镜时从 `lyrics[]` 读取，中文与英文均由 JSON 提供。导出 ASS 的 `PlayResX/Y` 等于最终输出尺寸，最近邻放大画面后才加字幕。底部双语字幕保留约7%下边距、8%左右安全区，带暗板；音乐状态提示在上部安全区。不要先在384网格画中文后一起放大。
+技术检查文案保存在 `CAPTIONS`；指定分镜时从 `lyrics[]` 读取，中文与英文均由 JSON 提供。导出 ASS 的 `PlayResX/Y` 等于最终输出尺寸，最近邻放大画面后才加字幕。底部双语字幕保留约7%下边距、8%左右安全区，带暗板；音乐状态提示在上部安全区。不要先在384网格画中文后一起放大。
+
+没有 `words[]` 时继续整句字幕。提供词级时间时，预览与 ASS 导出在整句始终可见的前提下逐词切换颜色；词间空隙不推进高亮，导出会拒绝百分秒量化成零长的词。LRC 转换器仍只生成整句 cue，不会自动推导词界；准确歌词同步须基于实际音频校对。
 
 Windows 默认使用已有 `Microsoft YaHei`；可通过 `--font "已有字体名称"` 指定本机字体。浏览器与 ffmpeg 的字体选择和排版可能随系统变化，模板不下载字体。导出检测到缺字会失败并提示换用已安装字体，交付字幕以成片为准。
 
@@ -136,13 +138,13 @@ Windows 默认使用已有 `Microsoft YaHei`；可通过 `--font "已有字体�
 
 `mode:"scene-panel"` 会同时改变浏览器预览和 ASS 导出的歌词层：主歌词暖白、辅助行淡色、彩色描边、深色像素面板和角标装饰。`chapter.show` 会把 `chapters[].title` 显示为章节牌。未提供 `captionStyle` 时保留普通底部双语字幕，旧分镜兼容；该配置只改变视觉呈现，不会替代歌词校对或关键卡点确认。
 
-导出自动用 ffprobe 核对时长、尺寸、H.264/AAC及像素格式，并用 ffmpeg 解码全片。交付前仍需抽帧看开头提示、转场边界、第二镜动作、最终未抵达状态以及字幕暗板。
+导出自动用 ffprobe 核对时长、尺寸、H.264/AAC及像素格式，并用 ffmpeg 解码全片。技术检查时抽帧看开头提示、转场边界、移动标记、最终帧和字幕暗板；这些结果不等于 MV 的故事、美术或音乐同步验收。
 
 ```powershell
-ffprobe -v error -show_format -show_streams -of json C:\你的输出目录\paper-boat-demo.mp4
-ffmpeg -v error -i C:\你的输出目录\paper-boat-demo.mp4 -f null -
-ffmpeg -y -ss 5.55 -i C:\你的输出目录\paper-boat-demo.mp4 -frames:v 1 C:\你的输出目录\transition.png
-ffmpeg -y -ss 11.9 -i C:\你的输出目录\paper-boat-demo.mp4 -frames:v 1 C:\你的输出目录\ending.png
+ffprobe -v error -show_format -show_streams -of json C:\你的输出目录\render-check.mp4
+ffmpeg -v error -i C:\你的输出目录\render-check.mp4 -f null -
+ffmpeg -y -ss 5.55 -i C:\你的输出目录\render-check.mp4 -frames:v 1 C:\你的输出目录\transition.png
+ffmpeg -y -ss 11.9 -i C:\你的输出目录\render-check.mp4 -frames:v 1 C:\你的输出目录\ending.png
 ```
 
 

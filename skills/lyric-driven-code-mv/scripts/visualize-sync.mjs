@@ -44,18 +44,48 @@ function sampleEnvelope(envelope) {
   return result;
 }
 
-function nearestBeat(at, beats) {
-  if (!beats.length) return { nearestBeat: null, deltaSeconds: null, deltaMs: null };
+function nearestBeat(at, beats, details) {
+  if (!beats.length) return { nearestBeat: null, deltaSeconds: null, deltaMs: null, confidence: null, evidence: null };
   let lo = 0, hi = beats.length;
   while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if (beats[mid] < at) lo = mid + 1; else hi = mid; }
-  const earlier = beats[Math.max(0, lo - 1)], later = beats[Math.min(lo, beats.length - 1)];
-  const nearest = Math.abs(at - earlier) <= Math.abs(at - later) ? earlier : later;
-  return { nearestBeat: nearest, deltaSeconds: round(at - nearest), deltaMs: round((at - nearest) * 1000) };
+  const earlierIndex = Math.max(0, lo - 1), laterIndex = Math.min(lo, beats.length - 1);
+  const index = Math.abs(at - beats[earlierIndex]) <= Math.abs(at - beats[laterIndex]) ? earlierIndex : laterIndex;
+  const nearest = beats[index], detail = details[index];
+  return {
+    nearestBeat: nearest, deltaSeconds: round(at - nearest), deltaMs: round((at - nearest) * 1000),
+    confidence: detail?.confidence ?? null, evidence: detail?.evidence ?? null,
+  };
 }
 
 function summarize(items) {
   const deltas = items.map(item => item.deltaMs).filter(finite);
   return { count: items.length, comparedCount: deltas.length, meanAbsMs: deltas.length ? round(deltas.reduce((sum, delta) => sum + Math.abs(delta), 0) / deltas.length) : null, maxAbsMs: deltas.length ? Math.max(...deltas.map(Math.abs)) : null };
+}
+
+function buildAlignmentSuggestions(sceneStarts, storyboard, beats, beatDetails, toleranceMs) {
+  const suggestions = sceneStarts.slice(1).map(scene => ({
+    kind: 'scene-cut', cueId: scene.id, targetAt: scene.start, ...nearestBeat(scene.start, beats, beatDetails),
+  }));
+  for (const scene of storyboard.scenes) {
+    for (const [index, event] of (Array.isArray(scene.events) ? scene.events : []).entries()) {
+      if (!object(event) || event.sync !== 'beat' || !finite(event.at)) continue;
+      suggestions.push({
+        kind: 'event', cueId: `${scene.id}:event-${index + 1}`, targetAt: event.at,
+        ...nearestBeat(event.at, beats, beatDetails),
+      });
+    }
+  }
+  return suggestions.map(suggestion => {
+    let status = 'review-timing', suggestedAt = null;
+    if (suggestion.nearestBeat === null) status = 'no-beat-candidate';
+    else if (suggestion.confidence === null || suggestion.evidence === null) status = 'missing-beat-evidence';
+    else if (suggestion.confidence < 0.65) status = 'low-confidence';
+    else {
+      suggestedAt = suggestion.nearestBeat;
+      if (Math.abs(suggestion.deltaMs) <= toleranceMs) status = 'within-tolerance';
+    }
+    return { ...suggestion, suggestedAt, status };
+  });
 }
 
 /** Structural review only: never modifies or promotes the source storyboard. */
@@ -73,6 +103,11 @@ export function buildSyncReport(storyboard, analysis) {
     if (!finite(at) || at < 0 || at >= duration || (i && at <= source[i - 1])) fail('候选拍点须在 [0,duration) 内且严格递增');
     return at;
   });
+  const beatDetails = analysis.beatDetails === undefined ? [] : array(analysis.beatDetails, 'analysis.beatDetails', 12000);
+  if (beatDetails.length && beatDetails.length !== beats.length) fail('beatDetails 与 beats 须一一对应');
+  beatDetails.forEach((beat, i) => {
+    if (!object(beat) || !finite(beat.at) || Math.abs(beat.at - beats[i]) > EPSILON || !finite(beat.confidence) || beat.confidence < 0 || beat.confidence > 1 || !['observed', 'predicted'].includes(beat.evidence)) fail(`analysis.beatDetails[${i}] 的时点、置信值或 evidence 无效`);
+  });
   const envelope = array(analysis.energy?.envelope, 'energy.envelope', 150000);
   envelope.forEach((point, i) => {
     if (!object(point) || !finite(point.at) || point.at < 0 || point.at >= analysis.duration || !finite(point.normalized) || point.normalized < 0 || point.normalized > 1 || (i && point.at <= envelope[i - 1].at)) fail('能量包络时点须递增且在分析时长内，normalized 须为 0–1');
@@ -84,7 +119,7 @@ export function buildSyncReport(storyboard, analysis) {
     interval(scene, `scenes[${i}]`, duration); id(scene.id, `scenes[${i}].id`);
     if (sceneIds.has(scene.id) || Math.abs(scene.start - end) > EPSILON) fail('镜头 ID 须唯一，时间区间须连续覆盖成片');
     sceneIds.add(scene.id); end = scene.end;
-    return { id: scene.id, start: scene.start, end: Math.min(scene.end, duration), ...nearestBeat(scene.start, beats) };
+    return { id: scene.id, start: scene.start, end: Math.min(scene.end, duration), ...nearestBeat(scene.start, beats, beatDetails) };
   });
   if (Math.abs(end - duration) > EPSILON) fail('镜头末尾须覆盖成片时长');
   const cueIds = new Set();
@@ -93,16 +128,19 @@ export function buildSyncReport(storyboard, analysis) {
     if (cueIds.has(cue.id)) fail('字幕 ID 须唯一'); cueIds.add(cue.id);
     const text = cue.zh ?? cue.text;
     if (typeof text !== 'string' || !text.trim()) fail('字幕须提供非空 text/zh');
-    return { id: cue.id, start: cue.start, end: Math.min(cue.end, duration), textPreview: preview(text), textTruncated: text.length > 300, ...nearestBeat(cue.start, beats) };
+    return { id: cue.id, start: cue.start, end: Math.min(cue.end, duration), textPreview: preview(text), textTruncated: text.length > 300, ...nearestBeat(cue.start, beats, beatDetails) };
   });
   const musicStatus = preview(storyboard.music?.status) || 'unspecified';
   const captionRole = preview(storyboard.music?.captionRole ?? storyboard.captionRole) || 'unspecified';
   const energy = sampleEnvelope(envelope);
+  const toleranceMs = finite(project.settings?.beatToleranceMs) ? project.settings.beatToleranceMs : 80;
+  const alignmentSuggestions = buildAlignmentSuggestions(sceneStarts, storyboard, beats, beatDetails, toleranceMs);
   return {
     schemaVersion: 1, status: 'candidate-review', timebase: 'clip', duration, sourceOffset: project.sourceOffset, musicStatus, captionRole,
     tempo: { bpm: finite(analysis.tempo?.bpm) ? analysis.tempo.bpm : null, status: preview(analysis.tempo?.status) || 'unknown' },
-    beats, energy, sceneStarts, captions,
+    beats, beatDetails, energy, sceneStarts, captions, alignmentSuggestions,
     summary: { internalSceneStarts: summarize(sceneStarts.slice(1)), captionStarts: summarize(captions) },
+    beatReview: { confidenceThreshold: 0.65, toleranceMs, suggestionsRequireManualAcceptance: true },
     sampling: { originalEnergyPoints: envelope.length, displayedEnergyPoints: energy.length, maxEnergyPoints: MAX_ENERGY_POINTS },
     warnings: [
       '此图仅比对结构与机器候选网格，不证明真实歌曲已核听，也不升级 music.status。',
@@ -128,7 +166,11 @@ export function renderSyncSVG(report) {
   if (report.energy.length) elements.push(`<polyline points="${report.energy.map(point => `${number(x(point.at))},${number(218 - point.normalized * 105)}`).join(' ')}" fill="none" stroke="#67d8c0" stroke-width="1.5"/>`);
   else elements.push('<text x="120" y="176" fill="#9aa9bf">无能量数据</text>');
   elements.push('<text x="26" y="253">候选节拍</text>');
-  if (report.beats.length) for (const at of report.beats) elements.push(`<line x1="${number(x(at))}" y1="234" x2="${number(x(at))}" y2="260" stroke="#ae9bf3" opacity="0.55"><title>${xml(number(at))} 秒</title></line>`);
+  if (report.beats.length) for (let i = 0; i < report.beats.length; i++) {
+    const at = report.beats[i], detail = report.beatDetails[i];
+    const color = detail?.confidence >= report.beatReview.confidenceThreshold ? (detail.evidence === 'observed' ? '#67d8c0' : '#ae9bf3') : '#667085';
+    elements.push(`<line x1="${number(x(at))}" y1="234" x2="${number(x(at))}" y2="260" stroke="${color}" opacity="0.7"><title>${xml(number(at))} 秒；${xml(detail?.evidence ?? 'unknown')}；confidence ${xml(number(detail?.confidence ?? 0))}</title></line>`);
+  }
   else elements.push('<text x="120" y="253" fill="#9aa9bf">无候选拍点；落点误差为空</text>');
   elements.push('<text x="26" y="314">镜头区间</text>');
   report.sceneStarts.forEach((scene, i) => {
@@ -145,7 +187,8 @@ export function renderSyncSVG(report) {
     if (x(cue.end) - x(cue.start) > 60) elements.push(`<text x="${number(x(cue.start) + 4)}" y="${y + 14}" font-size="11">${xml(label(cue.id, x(cue.end) - x(cue.start)))}</text>`);
   });
   const summary = report.summary.internalSceneStarts;
-  elements.push(`<text x="26" y="610">内部镜头起点 ${summary.count} 个；平均绝对候选误差 ${summary.meanAbsMs === null ? '无' : xml(number(summary.meanAbsMs)) + ' ms'}。正数较晚，负数较早。</text>`, '<text x="26" y="636" fill="#9aa9bf">器乐叙事字幕可依据段落、能量与语义落点；所有误差只供人工复核。精确区间和输入哈希见同名 JSON。</text>', '</g></svg>');
+  const suggestionCount = report.alignmentSuggestions.filter(item => item.suggestedAt !== null).length;
+  elements.push(`<text x="26" y="610">内部镜头起点 ${summary.count} 个；平均绝对候选误差 ${summary.meanAbsMs === null ? '无' : xml(number(summary.meanAbsMs)) + ' ms'}；可复核建议 ${suggestionCount} 个。</text>`, '<text x="26" y="636" fill="#9aa9bf">颜色区分可观测起音与网格预测；低置信度不生成建议。所有改时点都需人工接受。精确区间和输入哈希见同名 JSON。</text>', '</g></svg>');
   return elements.join('\n') + '\n';
 }
 

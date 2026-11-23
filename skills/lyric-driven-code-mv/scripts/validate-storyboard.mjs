@@ -328,6 +328,42 @@ export function analyzeStoryboard(data, options = {}) {
           `${formatWidth(width)} 个全角字宽（去空白后），建议按标点拆成两行（单行上限 22 个全角字宽）`);
       }
     }
+    if (lyric.words !== undefined) {
+      const wordsPath = `${path}.words`;
+      if (!Array.isArray(lyric.words) || lyric.words.length === 0) {
+        fail(wordsPath, '若提供，必须为非空数组');
+      } else {
+        let previousEnd = lyric.start;
+        let joinedText = '';
+        lyric.words.forEach((value, wordIndex) => {
+          const wordPath = `${wordsPath}[${wordIndex}]`;
+          const word = object(value, wordPath);
+          if (!word) return;
+          if (typeof word.text === 'string') joinedText += word.text;
+          const validWordText = text(word.text, `${wordPath}.text`);
+          const validStart = finite(word.start, `${wordPath}.start`);
+          const validEnd = finite(word.end, `${wordPath}.end`);
+          if (validStart && isFiniteNumber(lyric.start) && word.start < lyric.start) {
+            fail(`${wordPath}.start`, '不得早于所属歌词');
+          }
+          if (validEnd && isFiniteNumber(lyric.end) && word.end > lyric.end) {
+            fail(`${wordPath}.end`, '不得晚于所属歌词');
+          }
+          if (validStart && validEnd && word.end <= word.start) {
+            fail(wordPath, '必须满足 start < end');
+          }
+          if (validStart && word.start < previousEnd) {
+            fail(`${wordPath}.start`, '词序须递增且时间区间不得重叠');
+          }
+          if (validStart && validEnd && word.end > word.start) previousEnd = word.end;
+          else if (validWordText) previousEnd = lyric.start;
+        });
+        const visibleText = lyric.zh ?? lyric.text;
+        if (typeof visibleText === 'string' && joinedText !== visibleText) {
+          fail(wordsPath, '按顺序拼接 words[].text 必须与可见主行 zh ?? text 完全一致');
+        }
+      }
+    }
     if (lyric.allowSceneSplit !== undefined && typeof lyric.allowSceneSplit !== 'boolean') fail(`${path}.allowSceneSplit`, '若提供，必须为布尔值');
     if (lyric.splitReason !== undefined && typeof lyric.splitReason !== 'string') fail(`${path}.splitReason`, '若提供，必须为字符串');
     if (typeof lyric.id === 'string') lyricsById.set(lyric.id, lyric);

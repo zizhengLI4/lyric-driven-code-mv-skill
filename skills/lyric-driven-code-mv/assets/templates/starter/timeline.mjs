@@ -116,7 +116,33 @@ export function createTimeline(data, sceneIds = ['send', 'receive']) {
     cueIds.add(cue.id);
     const zh = cue.zh ?? cue.text;
     if (!text(zh) || (cue.en !== undefined && typeof cue.en !== 'string')) fail(`lyrics[${i}]须提供text/zh及可选en文本`);
-    return { id: cue.id, start: cue.start, end: Math.min(cue.end, p.duration), zh, en: cue.en ?? '' };
+    let words;
+    if (cue.words !== undefined) {
+      if (!Array.isArray(cue.words) || cue.words.length === 0) fail(`lyrics[${i}].words须为非空数组`);
+      else {
+        let previousEnd = cue.start;
+        let joinedText = '';
+        words = cue.words.map((word, wordIndex) => {
+          const path = `lyrics[${i}].words[${wordIndex}]`;
+          if (!object(word) || !text(word.text) || !finite(word.start) || !finite(word.end)
+            || word.start < cue.start || word.end > cue.end || word.end <= word.start || word.start < previousEnd) {
+            fail(`${path}须提供歌词区间内按序、不重叠的text/start/end`);
+          }
+          if (typeof word?.text === 'string') joinedText += word.text;
+          if (finite(word?.end) && word.end > previousEnd) previousEnd = word.end;
+          return { text: word?.text, start: word?.start, end: word?.end };
+        });
+        if (joinedText !== zh) fail(`lyrics[${i}].words须按序拼接为可见歌词`);
+      }
+    }
+    return {
+      id: cue.id,
+      start: cue.start,
+      end: Math.min(cue.end, p.duration),
+      zh,
+      en: cue.en ?? '',
+      ...(words ? { words } : {}),
+    };
   });
   const status = data.music.status;
   // draft 默认**不**在成片上盖水印。只有显式写 project.draftMark:true 才烧入提示。
@@ -151,6 +177,15 @@ export function createTimeline(data, sceneIds = ['send', 'receive']) {
     notice,
     noticeEnd: status === 'illustrative' ? Math.min(2.2, p.duration) : p.duration,
   };
+}
+
+export function captionSegmentsAtTime(cue, time) {
+  if (!finite(time)) fail('歌词字幕求值时间须为有限数');
+  if (!Array.isArray(cue?.words)) return null;
+  return cue.words.map(word => ({
+    text: word.text,
+    state: time >= word.end ? 'played' : time >= word.start ? 'active' : 'upcoming',
+  }));
 }
 
 export { DEFAULT_CAPTION_STYLE, normalizeCaptionStyle };

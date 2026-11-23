@@ -24,6 +24,17 @@ function pulses(duration = 8, phase = 0.17, period = 0.5, amplitude = 0.8) {
   return samples;
 }
 
+function lowFrequencyPulses(duration = 12, phase = 0.17, period = 0.5) {
+  const samples = new Float32Array(Math.round(duration * sampleRate));
+  for (let start = phase; start < duration; start += period) {
+    for (let offset = 0; offset < 0.08 * sampleRate; offset++) {
+      const index = Math.round(start * sampleRate) + offset;
+      if (index < samples.length) samples[index] = 0.8 * Math.exp(-offset / (0.025 * sampleRate)) * Math.sin(2 * Math.PI * 70 * offset / sampleRate);
+    }
+  }
+  return samples;
+}
+
 // 80 ms of timing spread represents loose playing; the intended beat remains 110 BPM.
 function loose110(duration = 80, jitter = 0.08) {
   const samples = new Float32Array(Math.round(duration * sampleRate));
@@ -35,6 +46,33 @@ function loose110(duration = 80, jitter = 0.08) {
       const index = Math.round(start * sampleRate) + offset;
       if (index >= 0 && index < samples.length) samples[index] = 0.8 * Math.exp(-offset / (0.012 * sampleRate)) * Math.cos(2 * Math.PI * 600 * offset / sampleRate);
     }
+  }
+  return samples;
+}
+
+function changingTempoWithDropout() {
+  const duration = 24;
+  const samples = new Float32Array(duration * sampleRate);
+  const addPulse = at => {
+    for (let offset = 0; offset < 0.04 * sampleRate; offset++) {
+      const index = Math.round(at * sampleRate) + offset;
+      if (index < samples.length) samples[index] = 0.8 * Math.exp(-offset / (0.012 * sampleRate)) * Math.cos(2 * Math.PI * 600 * offset / sampleRate);
+    }
+  };
+  for (let beat = 0; 0.17 + beat * 60 / 110 < 9; beat++) addPulse(0.17 + beat * 60 / 110);
+  for (let beat = 0; 12.2 + beat * 60 / 84 < duration; beat++) addPulse(12.2 + beat * 60 / 84);
+  return samples;
+}
+
+function graduallyChangingTempo() {
+  const duration = 48;
+  const samples = new Float32Array(duration * sampleRate);
+  for (let at = 0.17; at < duration;) {
+    for (let offset = 0; offset < 0.04 * sampleRate; offset++) {
+      const index = Math.round(at * sampleRate) + offset;
+      if (index < samples.length) samples[index] = 0.8 * Math.exp(-offset / (0.012 * sampleRate)) * Math.cos(2 * Math.PI * 600 * offset / sampleRate);
+    }
+    at += 0.5 - 0.04 * at / duration;
   }
   return samples;
 }
@@ -98,6 +136,63 @@ test('120 BPM pulses retain their 0.17-second phase instead of forcing a grid to
   assert.ok(report.tempo.candidates.length > 1);
   assert.ok(report.tempo.candidates.every(candidate => candidate.vote >= 0 && candidate.phaseSeconds >= 0 && candidate.phaseSeconds < 60 / candidate.bpm));
   assert.ok(report.tempo.ambiguities.some(candidate => candidate.relation === 'half' && Math.abs(candidate.bpm - 60) < 1));
+});
+
+test('low-frequency kick candidates retain low-band evidence and stay aligned to the pulse', () => {
+  const report = analyzePcm(lowFrequencyPulses(), { sampleRate });
+  assert.ok(report.frequencyBands.lowMaxHz > 0 && report.frequencyBands.midMaxHz > report.frequencyBands.lowMaxHz);
+  assert.ok(report.onsets.length >= 18);
+  assert.ok(Math.abs(report.onsets[0].at - 0.17) <= 0.03);
+  assert.ok(report.onsets[0].bandStrength.low > report.onsets[0].bandStrength.high);
+  assert.ok(Math.abs(report.tempo.bpm - 120) <= 1, JSON.stringify(report.tempo));
+});
+
+test('local beat support follows a tempo change and does not extrapolate through a dropout', () => {
+  const report = analyzePcm(changingTempoWithDropout(), { sampleRate });
+  assert.ok(Array.isArray(report.tempo.windows), 'publish local tempo windows with their support');
+  assert.ok(report.beatDetails.length === report.beats.length, 'each beat should carry provenance and confidence');
+  const early = report.tempo.windows.find(window => window.start < 8 && window.bpm !== null);
+  const late = report.tempo.windows.find(window => window.start >= 14 && window.bpm !== null);
+  assert.ok(early, JSON.stringify(report.tempo.windows));
+  assert.ok(late, JSON.stringify(report.tempo.windows));
+  assert.ok(Math.abs(early.bpm - 110) <= 2, JSON.stringify(early));
+  assert.ok(Math.abs(late.bpm - 84) <= 2, JSON.stringify(late));
+  assert.equal(report.beats.some(at => at >= 9.5 && at < 12), false, 'unsupported silence must remain empty');
+  assert.ok(report.beatDetails.every(beat => ['observed', 'predicted'].includes(beat.evidence)));
+  assert.ok(report.beatDetails.every(beat => beat.confidence >= 0 && beat.confidence <= 1));
+});
+
+test('gradual tempo drift uses local beat candidates instead of one drifting global grid', () => {
+  const report = analyzePcm(graduallyChangingTempo(), { sampleRate });
+  assert.equal(report.tempo.status, 'variable-tempo', JSON.stringify(report.tempo));
+  assert.equal(report.tempo.bpm, null, 'a single BPM should not summarize a supported continuous tempo drift');
+
+  const expectedBeats = [];
+  for (let at = 0.17; at < report.duration;) {
+    expectedBeats.push(at);
+    at += 0.5 - 0.04 * at / report.duration;
+  }
+  assert.ok(report.beats.length > 80);
+  for (const at of report.beats) {
+    const nearestDistance = Math.min(...expectedBeats.map(expected => Math.abs(expected - at)));
+    assert.ok(nearestDistance <= 0.08, `candidate ${at}s is ${nearestDistance}s from every generated pulse`);
+  }
+});
+
+test('a provided BPM does not override local tempo changes or fill a silent gap', () => {
+  const report = analyzePcm(changingTempoWithDropout(), { sampleRate, bpm: 110 });
+  assert.equal(report.tempo.status, 'local-variation');
+  assert.equal(report.beats.some(at => at >= 9.5 && at < 12), false, 'the dropout must remain unsupported');
+  const laterWindow = report.tempo.windows.find(window => window.start >= 16 && window.bpm !== null);
+  assert.ok(laterWindow, JSON.stringify(report.tempo.windows));
+  assert.ok(Math.abs(laterWindow.bpm - 84) <= 2, JSON.stringify(laterWindow));
+
+  const expectedLaterBeats = [];
+  for (let at = 12.2; at < report.duration; at += 60 / 84) expectedLaterBeats.push(at);
+  for (const at of report.beats.filter(beat => beat >= 12.2)) {
+    const nearestDistance = Math.min(...expectedLaterBeats.map(expected => Math.abs(expected - at)));
+    assert.ok(nearestDistance <= 0.08, `candidate ${at}s is ${nearestDistance}s from an 84 BPM pulse`);
+  }
 });
 
 test('known 110 BPM fits phase without replacing the provided tempo or claiming verification', () => {
@@ -340,6 +435,8 @@ test('CLI help explains draft status and bounded memory without decoding anythin
   assert.equal(result.status, 0);
   assert.match(result.stdout, /draft/);
   assert.match(result.stdout, /600/);
+  assert.match(result.stdout, /局部窗口/);
+  assert.doesNotMatch(result.stdout, /phaseSeconds \+ n \* 60 \/ bpm/);
 });
 
 test('CLI without --out emits parseable JSON on stdout and draft status for a silent clip', t => {

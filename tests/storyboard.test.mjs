@@ -47,6 +47,49 @@ test('accepts a complete clip storyboard while sourceOffset only records the ori
   assert.deepEqual(validateStoryboard(data), []);
 });
 
+test('accepts optional word timings that reconstruct the lyric within its clip interval', () => {
+  const data = validStoryboard();
+  data.lyrics[0].words = [
+    { text: '把', start: 1, end: 1.4 },
+    { text: '回忆', start: 1.55, end: 2.2 },
+    { text: '保留', start: 2.4, end: 3 },
+  ];
+  assert.deepEqual(validateStoryboard(data), []);
+});
+
+test('rejects invalid word timing arrays, text, order, overlap, and cue bounds', () => {
+  const validWords = () => [
+    { text: '把', start: 1, end: 1.4 },
+    { text: '回忆', start: 1.55, end: 2.2 },
+    { text: '保留', start: 2.4, end: 3 },
+  ];
+  const cases = [
+    ['non-array', { text: '把', start: 1, end: 1.4 }],
+    ['missing text', [{ text: '', start: 1, end: 1.4 }]],
+    ['nonfinite start', [{ text: '把', start: Infinity, end: 1.4 }]],
+    ['nonpositive duration', [{ text: '把', start: 1, end: 1 }]],
+    ['before cue', [{ text: '把', start: 0.9, end: 1.4 }]],
+    ['after cue', [{ text: '把', start: 1, end: 3.1 }]],
+    ['mismatched lyric text', [{ text: '留下', start: 1, end: 1.4 }]],
+    ['out of order', [
+      { text: '把', start: 1.55, end: 2.2 },
+      { text: '回忆', start: 1, end: 1.4 },
+      { text: '保留', start: 2.4, end: 3 },
+    ]],
+    ['overlap', [
+      { text: '把', start: 1, end: 1.6 },
+      { text: '回忆', start: 1.5, end: 2.2 },
+      { text: '保留', start: 2.4, end: 3 },
+    ]],
+  ];
+  for (const [name, words] of cases) {
+    const data = validStoryboard();
+    data.lyrics[0].words = structuredClone(words);
+    const errors = validateStoryboard(data);
+    assert.ok(errors.some(error => /lyrics\[0\]\.words/.test(error)), `${name}: ${JSON.stringify(errors)}`);
+  }
+});
+
 test('accepts lyric-free scenes and music sections that do not tile the full clip', () => {
   const data = validStoryboard();
   data.scenes[0].lyricIds = [];
@@ -975,11 +1018,11 @@ for (const [name, lyricsMeta, expected] of invalidLyricsMetaCases) {
 function devicesStoryboard() {
   const data = validStoryboard();
   data.devices = [
-    { id: 'river-system', type: 'game-system', name: '隔岸寄送系统', purpose: '把寄送呈现为可读状态' },
+    { id: 'city-system', type: 'game-system', name: '城市地图系统', purpose: '把路线与邀请状态呈现为可读状态' },
     { id: 'save-load', type: 'game-system', name: '读档界面', purpose: '第二个阶段换成读档提示' },
   ];
   data.chapters = [
-    { id: 'send-chapter', start: 0, end: 6, title: '第一次发送', meaning: '主动靠近', deviceId: 'river-system' },
+    { id: 'send-chapter', start: 0, end: 6, title: '第一次发送', meaning: '主动靠近', deviceId: 'city-system' },
     { id: 'load-chapter', start: 6, end: 12, title: '读档回看', meaning: '回看未抵达', deviceId: 'save-load' },
   ];
   return data;
@@ -1056,7 +1099,7 @@ test('the shipped example carries a 24-second main shot whose readability comes 
   // 三次可读变化：HUD 下降一次 + 字幕换行两次。
   const changes = [...hudEvents.map(event => event.at), ...onScreen.slice(1).map(line => line.start)].sort((a, b) => a - b);
   assert.deepEqual(changes, [4.5, 9, 17.2]);
-  assert.equal(example.lyricsMeta?.proofread, true);
+  assert.equal(example.lyricsMeta, undefined, '示例不伪造歌词校对记录');
   // 收尾必须落在 24 秒上：duration、章节、段落、拍点都不能越过主镜。
   assert.equal(example.project.duration, 24);
   assert.equal(example.chapters.at(-1).end, 24);

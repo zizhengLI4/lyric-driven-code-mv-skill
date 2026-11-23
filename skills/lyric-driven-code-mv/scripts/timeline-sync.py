@@ -4,6 +4,7 @@
 
 用法：
   python timeline-sync.py song.wav -o work/timeline.png
+  python timeline-sync.py song.wav --analysis work/analysis.json -o work/timeline.png
   python timeline-sync.py final.mp4 --storyboard storyboard.json -o work/timeline.png --json work/timeline.json
   python timeline-sync.py final.mp4 --storyboard storyboard.json --align lyrics,sections
 
@@ -11,22 +12,19 @@
   1. 一张 PNG：能量包络 + 估出来的拍点 + 分镜的切点 + 字幕起止
   2. 一份 JSON：duration / bpm / beats / cuts / lyrics / 空隙统计 / 各口径对齐统计
 
-**它不证明音画同步。** 拍点是从能量瞬变猜的，BPM 只在拍点够多时才给，
-且永远标 speculative。真正的判断仍然是完整播放一遍。
+默认调用 `analyze-audio.mjs` 生成局部速度和候选拍点；已保存报告时可通过 `--analysis` 复用。报告中的机器候选始终是 draft，真正的音画判断仍需播放核对。
 
 --align 决定「切镜该跟谁对齐」：
-  beats     跟着估出来的拍点（默认口径之一）
+  beats     跟着音频分析候选或分镜已有拍点
   lyrics    跟着歌词句头（storyboard.lyrics[].start）
   sections  跟着音乐段落起点（storyboard.music.sections[].start）
 可以多选，例如 --align beats,lyrics；省略时：分镜有 music.sections 就用 sections，否则用 beats。
 按歌词句头或段落切镜的片子本来就不该跟拍点对齐，用错口径只会让人误以为剪错了。
 
-依赖：ffmpeg（必须）、Pillow（画图）。
+依赖：Node、ffmpeg、Pillow。未提供 `--analysis` 时会调用同目录的 `analyze-audio.mjs`；PNG 需要 Pillow。
 """
 import argparse
-import array
 import json
-import math
 import os
 import statistics
 import subprocess
@@ -36,7 +34,7 @@ from PIL import Image, ImageDraw, ImageFont
 from path_safety import assert_no_path_aliases
 
 ALIGN_MODES = ("beats", "lyrics", "sections")
-ALIGN_HELP = "切镜对齐口径：beats（估出来的拍点）/ lyrics（歌词句头）/ sections（音乐段落起点），逗号分隔可多选"
+ALIGN_HELP = "切镜对齐口径：beats（分析候选或分镜网格）/ lyrics（歌词句头）/ sections（音乐段落起点），逗号分隔可多选"
 
 # Windows 控制台默认可能是 GBK；报告里有中文，显式转成 UTF-8 免得写崩或出现乱码。
 for _stream in (sys.stdout, sys.stderr):
@@ -71,66 +69,57 @@ def font(size):
     raise SystemExit("找不到中文字体，请在 FONT_CANDIDATES 里加一条本机字体路径。")
 
 
-def decode(path, sr=8000):
-    """用 ffmpeg 解成 8kHz 单声道 s16，足够画包络与找瞬变。"""
-    cmd = ["ffmpeg", "-v", "error", "-i", path, "-f", "s16le", "-ac", "1", "-ar", str(sr), "-"]
-    proc = subprocess.run(cmd, capture_output=True)
-    if proc.returncode != 0:
-        message = proc.stderr.decode("utf-8", "replace").strip().splitlines()
-        hint = "（这个文件可能没有音轨）" if "Audio" in " ".join(message) or "Stream" in " ".join(message) else ""
-        raise SystemExit(f"ffmpeg 解码失败{hint}：{message[-1] if message else '未知错误'}")
-    samples = array.array("h")
-    samples.frombytes(proc.stdout[: len(proc.stdout) // 2 * 2])
-    return samples, sr
+def load_audio_analysis(source, analysis_path=None, sample_rate=8000):
+    """Read a shared analyzer report or run the Node analyzer once for this source."""
+    if analysis_path:
+        try:
+            with open(analysis_path, encoding="utf-8") as handle:
+                report = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"无法读取分析报告：{exc}")
+    else:
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "analyze-audio.mjs")
+        result = subprocess.run(
+            ["node", script, source, "--sample-rate", str(sample_rate)],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        if result.returncode != 0:
+            raise SystemExit(result.stderr.strip() or "analyze-audio.mjs 分析失败")
+        try:
+            report = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"analyze-audio.mjs 未返回有效 JSON：{exc}")
+
+    if not isinstance(report, dict) or report.get("schemaVersion") != 1 or report.get("status") != "draft" or report.get("timebase") != "clip":
+        raise SystemExit("分析报告须为 schemaVersion=1、status=draft、timebase=clip")
+    duration = report.get("duration")
+    beats = report.get("beats")
+    if not isinstance(duration, (int, float)) or not 0 < duration <= 600:
+        raise SystemExit("分析报告 duration 须在 0–600 秒内")
+    if not isinstance(beats, list) or any(not isinstance(at, (int, float)) or not 0 <= at < duration for at in beats):
+        raise SystemExit("分析报告 beats 须为成片时钟内的数值数组")
+    if beats != sorted(set(beats)):
+        raise SystemExit("分析报告 beats 须严格递增且唯一")
+    details = report.get("beatDetails", [])
+    if not isinstance(details, list) or (details and len(details) != len(beats)):
+        raise SystemExit("分析报告 beatDetails 须与 beats 一一对应")
+    if not isinstance(report.get("energy"), dict) or not isinstance(report["energy"].get("envelope"), list):
+        raise SystemExit("分析报告缺少 energy.envelope")
+    return report
 
 
-def envelope(samples, sr, win=0.02):
-    step = max(1, int(sr * win))
-    out = []
-    for i in range(0, len(samples) - step + 1, step):
-        chunk = samples[i:i + step]
-        total = 0
-        for value in chunk:
-            total += value * value
-        out.append(math.sqrt(total / step) / 32768.0)
-    return out
-
-
-def find_beats(env, win, sensitivity=1.0, min_gap=0.15):
-    """能量瞬变 + 峰值挑选。返回（秒数列表, 阈值）。"""
-    if len(env) < 3:
-        return [], 0.0
-    flux = [0.0] + [max(0.0, env[i] - env[i - 1]) for i in range(1, len(env))]
-    mean = sum(flux) / len(flux)
-    sd = statistics.pstdev(flux) if len(flux) > 1 else 0.0
-    threshold = mean + sensitivity * sd
-    picks = []
-    for i, value in enumerate(flux):
-        if value <= threshold or value <= 0:
-            continue
-        t = i * win
-        if picks and t - picks[-1][0] < min_gap:
-            if value > picks[-1][1]:
-                picks[-1] = (t, value)
-            continue
-        picks.append((t, value))
-    return [t for t, _ in picks], threshold
-
-
-def estimate_bpm(beats, lo=60, hi=200):
-    """只用拍点间隔的中位数估 BPM；样本不足或超范围就返回 None。"""
-    if len(beats) < 5:
-        return None
-    diffs = [b - a for a, b in zip(beats, beats[1:]) if b - a > 0.08]
-    if len(diffs) < 4:
-        return None
-    median = statistics.median(diffs)
-    bpm = 60.0 / median
-    while bpm < lo:
-        bpm *= 2
-    while bpm > hi:
-        bpm /= 2
-    return round(bpm, 1)
+def chart_envelope(analysis, window):
+    """Downsample the shared normalized envelope for the PNG without detecting beats again."""
+    if not isinstance(window, (int, float)) or window <= 0:
+        raise SystemExit("--window 须为正数")
+    envelope = analysis["energy"]["envelope"]
+    source_step = analysis["energy"].get("hopSeconds", 0.01)
+    stride = max(1, round(window / source_step))
+    values = []
+    for point in envelope[::stride]:
+        if isinstance(point, dict) and isinstance(point.get("normalized"), (int, float)):
+            values.append(point["normalized"])
+    return values, source_step * stride
 
 
 def draw(report, out_path, width=1600, height=560):
@@ -162,9 +151,11 @@ def draw(report, out_path, width=1600, height=560):
         d.line([(x, bottom), (x, bottom - h)], fill=WAVE if i % 2 == 0 else WAVE_DIM)
 
     # 拍点
-    for t in report["beats"]:
+    for index, t in enumerate(report["beats"]):
         x = x_of(t)
-        d.line([(x, bottom + 4), (x, bottom + 26)], fill=BEAT)
+        detail = report["beatDetails"][index] if index < len(report["beatDetails"]) else None
+        color = BEAT if detail and detail.get("confidence", 0) >= 0.65 and detail.get("evidence") == "observed" else LYRIC if detail and detail.get("confidence", 0) >= 0.65 else (105, 115, 132)
+        d.line([(x, bottom + 4), (x, bottom + 26)], fill=color)
     # 切镜
     for index, cut in enumerate(report["cuts"], 1):
         x = x_of(cut["at"])
@@ -184,7 +175,7 @@ def draw(report, out_path, width=1600, height=560):
         d.text((x - 8, height - 44), f"{t:.0f}s", font=f_tiny, fill=(140, 154, 178))
         t += step
 
-    legend = [("拍点（估）", BEAT), ("切镜", CUT), ("字幕", LYRIC), ("能量包络", WAVE)]
+    legend = [("实测支持候选", BEAT), ("网格预测/低置信", LYRIC), ("切镜", CUT), ("字幕", LYRIC), ("能量包络", WAVE)]
     x = pad_l
     for label, color in legend:
         d.rectangle([x, height - 24, x + 12, height - 12], fill=color)
@@ -245,12 +236,7 @@ def parse_align(value):
 
 
 def estimate_bpm_from_grid(beats, lo=60, hi=200):
-    """从一段拍点数组（分镜里的 music.beats）用中位间隔估 BPM。
-
-    与 estimate_bpm 的区别：那个吃的是本脚本自己挑的瞬变，这个吃的是分镜里
-    已经定稿的拍点网格。后者才是权威——它多半来自 analyze-audio.mjs 的
-    起音拟合。两个数摆在一起就能看出「脚本估的」和「分镜用的」是否打架。
-    """
+    """从分镜的局部候选拍点估计中位间隔速度，用于和音频报告并排复核。"""
     if not beats or len(beats) < 5:
         return None
     diffs = [b - a for a, b in zip(beats, beats[1:]) if b - a > 0.08]
@@ -269,9 +255,7 @@ def bpm_reconciliation(local_bpm, grid_bpm):
 
     只做提示，不自动改数：判断权留给人。
 
-    注意这两个数都不是权威。真正有起音拟合验证的是 analyze-audio.mjs 的输出，
-    分镜网格只是它某一次运行的快照——快照可能是旧的、错的。所以这里不写
-    「信分镜」，而是把分歧摆出来并指向该复核的工具。
+    两个数都只是候选；分镜拍点可能是旧快照，音频报告也可能低置信或选到半速网格。这里并排显示分歧，保留复核决定给人。
     """
     if not local_bpm or not grid_bpm:
         return None
@@ -281,12 +265,11 @@ def bpm_reconciliation(local_bpm, grid_bpm):
     for label, factor in (("double", 2.0), ("half", 0.5)):
         if abs(ratio - factor) <= 0.05:
             return {"status": f"octave-{label}", "ratio": round(ratio, 3),
-                    "note": f"分镜网格约为脚本估计的 {label}（{local_bpm} → {grid_bpm}）。"
-                            f"半速/双速歧义在这类估计里最常见，改一个数之前先把两种网格都摆到波形上看。"}
+            "note": f"分镜网格约为音频候选的 {label}（{local_bpm} → {grid_bpm}）。"
+                            f"半速/双速歧义常见，改时间之前先听实际片段并检查两种网格。"}
     return {"status": "disagree", "ratio": round(ratio, 3),
-            "note": f"脚本估出 {local_bpm} BPM，分镜网格是 {grid_bpm} BPM。两者都不是权威："
-                    f"脚本只用能量瞬变的中位间隔，遇切分音会偏；分镜网格是某次离线分析的快照，可能已过时。"
-                    f"以 analyze-audio.mjs 的起音拟合结果为准，并确认写进分镜的 music.beats 来自同一次运行。"}
+            "note": f"音频候选为 {local_bpm} BPM，分镜网格为 {grid_bpm} BPM。两者都不是核听结论："
+                    f"局部速度变化、切分音、弱拍、裁切偏移或过时网格都可能造成分歧。试听并确认对应报告与分镜使用同一音频区间。"}
 
 
 def resolve_align(requested, sections):
@@ -301,10 +284,7 @@ def resolve_align(requested, sections):
 def reference_points(mode, beats, lyrics, sections, grid_beats=None):
     """返回（参考点列表, 来源说明, 是否可用）。参考数据缺失时明确 unavailable。
 
-    beats 口径优先用分镜自带的 music.beats，而不是本脚本从头估的拍点。
-    理由：分镜网格来自 analyze-audio.mjs 的起音拟合（含强起音验证），
-    本脚本只用能量瞬变的中位间隔。拿更差的估计去判断切点对错，
-    会在已经精确吸附的分镜上得出"只有 4/12 卡在 80ms 内"的假结论。
+    beats 口径优先用分镜自带的 music.beats；没有时才使用当前 audio-analysis 报告。
     """
     if mode == "beats":
         if grid_beats:
@@ -312,7 +292,7 @@ def reference_points(mode, beats, lyrics, sections, grid_beats=None):
                     "storyboard-music-beats", True)
         if not beats:
             return [], "no-beat-candidates", False
-        return [{"at": float(at), "id": f"beat-{index + 1}"} for index, at in enumerate(beats)], "estimated-beats", True
+        return [{"at": float(at), "id": f"beat-{index + 1}"} for index, at in enumerate(beats)], "audio-analysis-beats", True
     if mode == "lyrics":
         if not lyrics:
             return [], "storyboard-lyrics-missing", False
@@ -372,16 +352,16 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="把音频、镜头、字幕画到同一条时间轴上")
     parser.add_argument("source", help="音频或视频文件（视频会自动取音轨）")
     parser.add_argument("--storyboard", help="可选：分镜 JSON，用来画切点与字幕")
+    parser.add_argument("--analysis", help="可选：复用 analyze-audio.mjs JSON 报告，避免重复分析")
     parser.add_argument("-o", "--out", default="work/timeline.png", help="输出 PNG")
     parser.add_argument("--json", dest="json_path", help="另存一份 JSON 报告")
-    parser.add_argument("--window", type=float, default=0.02, help="包络窗长（秒），默认 0.02")
-    parser.add_argument("--sensitivity", type=float, default=1.0, help="拍点阈值灵敏度，越大越挑")
-    parser.add_argument("--sr", type=int, default=8000, help="解码采样率，默认 8000")
+    parser.add_argument("--window", type=float, default=0.02, help="PNG 能量包络采样间隔（秒），默认 0.02")
+    parser.add_argument("--sr", type=int, choices=(8000, 16000), default=8000, help="默认分析采样率，默认 8000")
     parser.add_argument("--align", default=None, help=ALIGN_HELP)
     args = parser.parse_args(argv)
     try:
         assert_no_path_aliases(
-            inputs=[args.source, args.storyboard],
+            inputs=[args.source, args.storyboard, args.analysis],
             outputs=[args.out, args.json_path],
         )
     except ValueError as exc:
@@ -389,32 +369,50 @@ def main(argv=None):
 
     align_requested = parse_align(args.align) if args.align is not None else None
 
-    samples, sr = decode(args.source, args.sr)
-    env = envelope(samples, sr, args.window)
-    beats, threshold = find_beats(env, args.window, args.sensitivity)
-    duration = len(samples) / float(sr)
+    if not os.path.isfile(args.source) or not os.access(args.source, os.R_OK):
+        raise SystemExit(f"无法读取音频/视频文件：{args.source}")
+
+    analysis = load_audio_analysis(args.source, args.analysis, args.sr)
+    env, window = chart_envelope(analysis, args.window)
+    beats = analysis["beats"]
+    beat_details = analysis.get("beatDetails", [])
+    sr = analysis.get("sampleRate", args.sr)
+    duration = analysis["duration"]
     cuts, lyrics, sections, grid_beats = load_storyboard(args.storyboard) if args.storyboard else ([], [], [], [])
+    if args.storyboard:
+        with open(args.storyboard, encoding="utf-8") as handle:
+            storyboard_data = json.load(handle)
+        project = storyboard_data.get("project", {})
+        if isinstance(project.get("duration"), (int, float)) and abs(project["duration"] - duration) > max(1e-6, 1 / sr):
+            raise SystemExit("分析与分镜时长错配；请分析同一成片区间")
+        source_offset = project.get("sourceOffset")
+        if isinstance(source_offset, (int, float)) and abs(source_offset - analysis.get("sourceOffset", 0)) > 1e-6:
+            raise SystemExit("分析与分镜 sourceOffset 错配；请使用同一音频裁切范围")
     align_modes, align_source = resolve_align(align_requested, sections)
-    bpm = estimate_bpm(beats)
+    bpm = analysis.get("tempo", {}).get("bpm")
     grid_bpm = estimate_bpm_from_grid(grid_beats)
     bpm_agreement = bpm_reconciliation(bpm, grid_bpm)
 
     report = {
         "source": args.source,
         "duration": round(duration, 3),
-        "window": args.window,
+        "window": window,
         "sr": sr,
         "beats": [round(b, 3) for b in beats],
+        "beat_source": "analyze-audio",
+        "beatDetails": beat_details,
+        "tempo_windows": analysis.get("tempo", {}).get("windows", []),
         "bpm": bpm,
         "bpm_status": "speculative" if bpm else None,
+        "tempo_status": analysis.get("tempo", {}).get("status"),
         "bpm_grid": grid_bpm,
         "bpm_grid_status": "storyboard-grid" if grid_bpm else None,
         "bpm_reconciliation": bpm_agreement,
-        "beat_threshold": round(threshold, 6),
+        "beat_threshold": None,
         "cuts": cuts,
         "lyrics": lyrics,
         "envelope": [round(v, 5) for v in env],
-        "note": "拍点与 BPM 由能量瞬变估计，未经人工核对；不能据此宣称音画同步。",
+        "note": "拍点来自 analyze-audio.mjs 的局部窗口候选，并附观测/预测来源与启发式置信值；未经人工核对，不能据此宣称音画同步。",
         "align": {
             "modes": align_modes,
             "source": align_source,
@@ -425,11 +423,15 @@ def main(argv=None):
     }
 
     beats_per_cut = []
+    beat_confidence = {round(item.get("at", -1), 6): item for item in beat_details if isinstance(item, dict)}
     for cut in cuts:
         nearest = min(beats, key=lambda b: abs(b - cut["at"])) if beats else None
+        detail = beat_confidence.get(round(nearest, 6)) if nearest is not None else None
         if nearest is not None:
             beats_per_cut.append({"cut": cut["at"], "nearest_beat": round(nearest, 3),
-                                  "offset": round(cut["at"] - nearest, 3)})
+                                  "offset": round(cut["at"] - nearest, 3),
+                                  "confidence": detail.get("confidence") if detail else None,
+                                  "evidence": detail.get("evidence") if detail else None})
     if beats_per_cut:
         offsets = [abs(item["offset"]) for item in beats_per_cut]
         report["cut_to_beat"] = {
@@ -451,11 +453,9 @@ def main(argv=None):
         with open(args.json_path, "w", encoding="utf-8") as handle:
             json.dump({k: v for k, v in report.items() if k != "envelope"}, handle, ensure_ascii=False, indent=2)
 
-    bpm_line = f"{bpm:.0f} BPM (speculative)" if bpm else "BPM: n/a"
+    bpm_line = f"{bpm:.0f} BPM ({analysis.get('tempo', {}).get('status', 'candidate')})" if bpm else "BPM: n/a"
     print(f"duration {duration:.2f}s | beats {len(beats)} | {bpm_line} | cuts {len(cuts)} | lyrics {len(lyrics)} | align {','.join(align_modes)} ({align_source})")
-    # 分镜自带拍点网格时，把「脚本估的」和「分镜用的」并排摆出来。
-    # 不并排就会出事：这一版脚本对同一首歌估 125 BPM，而离线分析给出 144.1，
-    # 谁照着错的那个数排拍点，就会重演「大部分没卡上」。
+    # 分镜网格和分析报告不一致时，只呈现差异，不替人选择网格。
     if grid_bpm:
         print(f"bpm from storyboard grid: {grid_bpm:.0f}（{len(grid_beats)} 个拍点）")
     if bpm_agreement:

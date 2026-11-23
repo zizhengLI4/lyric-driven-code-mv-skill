@@ -44,12 +44,12 @@ starter 还包含一层演出缩放：JSON 路线在调用 `SCENE_RENDERERS[scen
 | 含义 | 目标与行动 | 反馈与结果 |
 |---|---|---|
 | 珍惜纪念物 | 抱起礼物，选择保留，摆上搁板 | 完整礼物留下，保留标记出现 |
-| 无法抵达 | 放出纸船，漂向远方，遇到阻碍 | 船停住，路线断裂，仍有距离 |
+| 遇到阻碍 | 尝试推进目标，发现路径受限并选择新行动 | 路线状态更新，画面呈现新的限制或可行选项 |
 | 付出与消耗 | 攀升、奔跑、跨过风雪 | 距离增大，体力改变；变化对应动作 |
 | 回忆变冷 | 触摸照片，结冰，再尝试解冻 | 图标失色、裂纹、温度格变化 |
-| 重新联系 | 两地相望，光锥跨屏，同步举灯 | 连线完成后才共同动作 |
+| 建立联系 | 选择沟通方式，等待对方或系统回应 | 对话状态与关系反馈随实际回应更新 |
 
-让动作准备稍早开始，峰值对准需要强调的音乐点。缓慢观察、句尾停留和间奏可以继续推进地点、记忆与关系。第一次送纸船失败，第二次揭示另一岸也在等待，可增加信息且保留遗憾；副歌不必全部变成成功。
+让动作准备稍早开始，峰值对准需要强调的音乐点。缓慢观察、句尾停留和间奏可以继续推进地点、记忆与关系。重复副歌可以先呈现一次未果的行动，再揭示新的信息或后果，增加故事层次；副歌不必全部变成成功。
 
 ## 器乐与原创叙事字幕
 
@@ -72,7 +72,7 @@ starter 还包含一层演出缩放：JSON 路线在调用 `SCENE_RENDERERS[scen
 | `device?` | `{id,type,name,purpose}`；先描述承载叙事的界面、系统、时间轴、视角或材质舞台，再决定场景画法 |
 | `chapters?` | 至少一个且连续覆盖 `[0,duration)` 的 `{id,start,end,title,meaning}`；用于标题牌、章节牌或关系阶段，不替代 `scenes[]` |
 | `captionStyle?` | `{mode:"bottom"|"scene-panel",placement:"bottom"|"integrated",lines:1|2,primary,secondary,panel,chapter}`；`scene-panel` 将歌词做成画面内像素 UI，预览与 ASS 导出共用归一化配置 |
-| `lyrics[]` | `id,start,end,text`，可加 `zh,en`；有意跨镜可加 `allowSceneSplit:true,splitReason` |
+| `lyrics[]` | `id,start,end,text`，可加 `zh,en,words[]`；有意跨镜可加 `allowSceneSplit:true,splitReason` |
 | `music` | `status,beats[],sections[]:{id,start,end},evidence?,presentationNotice?,pendingChecks?` |
 | `music.evidence` | `method,limitations,reviewer?,reviewedAt?`；最后两项用于人工核对 |
 | `music.pendingChecks[]` | `{start,end,check}`：成片秒区间与具体未确认内容；草稿交付时必需非空 |
@@ -86,6 +86,8 @@ starter 还包含一层演出缩放：JSON 路线在调用 `SCENE_RENDERERS[scen
 | `scene.exit` | `{type,dur,origin?,target?}`；类型为 cut/dissolve/ripple/water |
 
 主场景连续覆盖 `[0,duration)`，不重叠、不留洞。角色装束明确指定；道具拥有、消耗与保留另记状态并核对。`scene.lyricIds` 引用与镜头相交的歌词；留白镜头可为空。
+
+`lyrics[].words[]` 是可选的逐词显示数据，不改变 LRC 的整句导入或旧稿。每项为 `{text,start,end}`，时间使用当前项目的成片绝对秒。每个 `text` 是可见主行 `zh ?? text` 的连续片段，按顺序拼接必须完全相同；空格可附在相邻词片段上。词的区间须位于所属歌词内、按序排列且不重叠，可保留词间空隙。预览与 ASS 导出共用这些词界，当前、已唱和未唱片段分别使用强调色、主色和辅助色；ASS 以百分秒为精度，量化后为零长的词会被拒绝。词界应根据实际音频核对，均分时长只可作为视觉演示，不能称作已同步。
 
 先选 `device` 再选场景：装置决定观众如何读懂状态，场景只负责这一段目标、行动、反馈和结果。`chapters` 可以让标题牌、关系卡或结算牌拥有明确时间区间。长镜头没有固定秒数上限；镜长由信息密度决定，建议每 8–12 秒至少有一次可读变化（字幕、HUD、光线、材质、粒子或状态），留白可以保留。
 

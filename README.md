@@ -1,335 +1,327 @@
 # 歌词驱动代码 MV Skill
 
-**给你的 AI 一首歌，再把这个技能丢给它，让它把歌曲写成一段有故事的代码 MV。**
+**把一首歌变成一段由人物、场景和游戏界面共同讲述的代码动画。**
 
-你可以把喜欢的歌曲、校对歌词和想要的画面感觉交给 AI，再让它读取这个技能。你负责选歌、表达想法和确认效果，AI 按照技能组织歌曲分析、叙事装置、歌词分镜、人物演出、HUD/章节牌、代码动画、字幕与导出，把脑海中的画面逐步做成可以预览、修改和继续扩展的视频工程。音乐同步采用混合模式：先给出能量和拍点候选，关键动作由你确认后再锁定为卡点。
+这个 Skill 面向像素游戏风音乐 MV，也适用于其他以角色行动和连续场景为核心的歌词视频。它帮助 AI 把歌词含义落实为可见动作，把歌曲段落安排到时间线上，再把人物、场景、字幕、界面状态和转场做成可以预览、修改及继续扩展的工程。
 
-本项目是一套**自主研制的歌词驱动代码 MV Skill**，配套提供音频分析工具、分镜校验工具、原创像素动画模板与画面验收脚本。它把歌曲创作中容易脱节的几个环节串起来：歌词在讲什么，角色应该做什么，画面什么时候发生变化，以及最终怎样落到可编辑的代码和成片上。
+核心思路是：**歌词决定画面表达什么，音乐决定什么时候强调。** 歌词不只作为画面上的文字出现，人物会因歌词而行动，物件和界面状态会产生反馈，重复段落会留下新的信息或后果。制作前还要写一份通俗的听感笔记，把歌曲的情绪变化、能量最高点和结尾余味告诉画面设计；拍点分析只能提供时间候选，不能代替这份判断。
 
-核心思路很直接：**歌词决定画什么，音乐决定何时强调。**
+这个仓库包含主 Skill、制作指南、分镜格式、音频分析与校验脚本、像素场景模块，以及一套最小渲染检查模板。可按任务需要读取对应文件，无需一次性学习所有工具。
 
-一句关于“远方”的歌词，可以变成人物隔岸送出一盏灯；一段等待，可以写成纸船缓慢漂流、另一岸始终未亮的灯光；当歌曲的情绪发生变化，人物行动、道具状态和场景也随之推进。歌词中的意象有了具体的动作，重复的副歌可以带来新的回应，同一段音乐也就有了不同的故事进展。
+## 这个 Skill 可以帮你完成什么
 
-**快速入口：**[适用范围](#适合做怎样的作品) · [交给 AI 使用](#把歌曲和技能一起交给-ai) · [安装](#安装) · [12 秒示例](#先跑通-12-秒) · [音乐卡点](#音乐卡点从拍点到校验) · [完整制作指南](GETTING-STARTED.md)
-
-## 它可以帮你的 AI 做什么
-
-| 环节 | AI 可以按这个技能完成的工作 |
+| 环节 | 作用 |
 |---|---|
-| 歌曲分析 | 整理截取范围、段落、留白、能量变化与节拍候选，为镜头安排提供时间依据；关键动作保留人工确认入口 |
-| 叙事装置 | 先选聊天、游戏系统、时间轴、计数器、章节牌、视角或材质舞台，再拆场景 |
-| 歌词分镜 | 把歌词含义写成人物的目标、行动、反馈与结果，安排意象的出现、变化和再次出现 |
-| 人物演出 | 设计等待、尝试、失败、回应和完成等动作，让人物关系、道具和场景形成连续故事 |
-| 代码动画 | 组织按时间求值的动画，制作角色、场景、摄像机、粒子、转场、HUD、章节牌与材质变奏，并提供可任意跳播的预览 |
-| 字幕与音乐 | 规划字幕位置和可读性，将关键动作、镜头变化与音乐时间线对应起来，并标明待核对的落点 |
-| 检查与交付 | 校验分镜数据和画面一致性，检查导出的音视频流，整理可编辑源码、素材记录与 MP4 |
+| 歌曲与歌词梳理 | 确认录音版本、制作范围、歌词内容、歌曲段落、留白和可能的情绪转折 |
+| 角色与故事 | 设计有明确目标和行动的角色，让相遇、等待、失败、回应或告别形成连续变化 |
+| 像素视觉 | 规划角色轮廓、场景地图、调色板、光线、像素密度、前后景和动作姿态 |
+| RPG 界面 | 将标题菜单、地图、头像对白、任务列表、关系卡或 HUD 作为故事的一部分 |
+| 歌词分镜 | 将每句歌词关联到主体、景别、动作、反馈和结果，并安排意象的首次出现及后续变化 |
+| 字幕与时间 | 支持整句字幕、双语字幕和可选逐词高亮，并让预览与导出读取同一份歌词时间数据 |
+| 动画与导出 | 用代码生成逐帧画面、镜头运动、状态变化、音效、章节牌和转场，再输出可编辑工程或 MP4 |
+| 检查与交付 | 校验分镜时间和字段、检查确定性与画面安全区，核对音视频流、时长和关键帧 |
 
-这些环节可以由具备文件读取、代码执行和视频处理能力的 AI 助手逐步完成。提供歌曲文件后，离线分析可以给出能量、停顿、起音、BPM 和相位候选；歌词时间与关键落点仍需要结合校对文本和试听核对。技能会记录演示、草稿或已核对状态，让每个阶段的结果都清楚可追踪。
+AI 可以从用户提供的音频和歌词建立时间线，也可以先产出人物设定、视觉账本和分镜供你确认。每个新项目先记下主题、观众和期望的结尾感受，再选画幅、字幕方式和交付范围。信息缺失时，Skill 可以按歌曲提出明确标注的默认构想，继续制作。阶段交付可以是创作方案、歌曲地图、完整分镜、关键帧、工程、短片段或成片。
 
-## 适合做怎样的作品
 
-- **像素游戏风音乐 MV**：用小人物、任务、道具和场景变化表达歌词，让一首歌像一段可以观看的游戏剧情。
-- **双人叙事与情绪短片**：围绕靠近、等待、错过、陪伴、回应等主题，让人物的行动承接歌曲情绪。
-- **副歌片段与音乐短视频**：先做一段约 10–15 秒的代表片段，确认人物动作、字幕和转场，再继续扩展。
-- **可编辑的代码动画工程**：把镜头、动作和字幕保留在源文件里，方便换歌、改色、改人物、调整节奏和反复导出。
+想沿用《四格相纸》的拍贴机片头、短圆脸角色和道具回访，可以从[制作复盘](skills/lyric-driven-code-mv/references/four-frame-photo-case.md)开始。文中用两次擦泪解释人物动作和提示音如何一起变化，也给出了从已认可试片续到整曲时的检查方法。
 
-你可以直接给出喜欢的主题，例如“夜晚、两岸、纸船、暖色灯光”，也可以只确定歌曲与画幅，让 AI 先提出分镜。已有角色设定、画风或代码工程时，将它们一起交给 AI，技能会围绕你的选择组织后续制作。
+## 它怎样把歌词变成画面
 
-### 角色辨识度与画面质感
+### 从一句歌词找到一个可读事件
 
-角色好看不只靠配色和装饰；观众应当在缩小、去色或切回群像后仍认得出是谁。这个 Skill 会先把角色当作造型系统设计，再进入场景和动画：
+分镜不止写“这句歌词表达悲伤”，而是继续回答：镜头里谁或什么是主体？人物正在做什么？观众从哪个反馈看见变化？这一镜结束时留下什么状态？这些答案写清后，画面才有机会脱离字幕独立成立。
 
-1. 给每位主角建立角色卡，记录叙事功能、头部/发型、身形比例、服装轮廓、常用姿态、材质、识别物和持物位置。
-2. 把角色缩到同一尺度并做纯黑剪影测试。去掉姓名、颜色和手持小物后，每人仍应至少凭头部/服装轮廓、身形/重心、姿态三类中的两类与其他人区分。
-3. 在成片里最小的群像尺寸复查；较大的近景另备细节素材，不把小精灵直接放大充当特写。
-4. 质感按大形、色块、材质光影、少量识别细节逐层增加。统一像素尺度和光源方向，用褶皱、发束和克制反光表现材质；噪点、模糊和堆配件不能替代造型。
+下面是一个不指定具体剧情的填写例。动作必须根据本项目歌词和角色重写：
 
-参考视频可借鉴“剪影清楚、姿态有性格、细节受控”等原则，不照搬具体角色设计。完整规范见 [像素世界与演出](skills/lyric-driven-code-mv/references/pixel-game-visuals.md#角色差异度与完成度门槛)。
+| 项目 | 记录内容 |
+|---|---|
+| 歌词 | 引用项目中校对过的歌词 ID |
+| 画面主体 | 角色、道具或与当前歌词相关的环境细节 |
+| 景别与动作 | 先交代主体，再让动作过程和落点清楚可见 |
+| 即时反馈 | 物件、表情、光线或界面如何回应动作 |
+| 本镜结果 | 人物做成、放弃、等待或改变了什么 |
+| 后续承接 | 下一镜继续保留的位置、道具、关系或 HUD 状态 |
 
-### 逐句歌词变成可读画面
+如果一句歌词确实只适合留白，可以让环境、视线或轻微动作承接情绪，不必为了每句都做大幅切镜。镜头的变化由信息和歌曲结构决定。
 
-代码控制不是“先画一个大场景，再把歌词放上去”，而是让每句都有可辨的主体、动作和结果；相邻几句可以留在同一地点，但镜头焦点与事件必须推进。制作时先用角色/物件模块保持身份，再用统一时间线驱动逐帧画面；先审关键帧和无字幕版，确认物件与动作读得懂后再细化光影与材质。
+### 具体歌词和抽象歌词用不同方法
 
-- [代码控制视觉提示法](skills/lyric-driven-code-mv/references/code-directed-visuals.md)：分阶段提示词、逐句视觉账本、关键帧→代码实现→无字幕验收模板。
-- [四场景逐句演示（带字幕说明）](skills/lyric-driven-code-mv/assets/demos/four-cue-scene-change-demo.mp4) · [同一演示（无字幕）](skills/lyric-driven-code-mv/assets/demos/four-cue-scene-change-no-captions.mp4) · [接触表](skills/lyric-driven-code-mv/assets/demos/four-scene-contact.png)。它使用原创示例文案和代码绘制，静音，不对应任何真实歌曲；用于检查每句的视觉变化，而非展示完整成片质感。
+能直接看见的词，优先落到具体主体、道具或动作上。例如“门”“雨”“奔跑”应先让观众看到门、雨和奔跑的结果。说不出具体物件的句子，用色彩、天气、角色表情、姿态、景别或留白转译。每镜只保留一个主视觉事件，避免把多个隐喻、动作和 UI 变化挤在同一画面里。
 
-### 适用边界
+画面强度随歌曲实际能量变化。安静段可以保留等待、远景和微动作，能量上升时增加动作幅度、构图层次或空间变化，最高点安排全片最有分量的画面事件。高潮不固定为烟花、闪白或快速剪辑，具体事件由歌曲和故事决定。
 
-本项目面向**歌词驱动的角色/场景叙事和代码动画 MV**。如果只需要逐句显示歌词、K 歌字幕或纯文字卡点，不需要角色行动和故事画面，请改用更适合歌词字幕、素材蒙太奇和纯文字音乐短片的 `music-to-video` Skill。
+### 让界面参与叙事
 
-## 把歌曲和技能一起交给 AI
+RPG 界面既可以帮助观众读故事，也可以成为角色行动的结果。设计每个数值或图标时，先写清触发它的事件：
 
-下载仓库，把 `skills/lyric-driven-code-mv` 整个目录交给支持读取文件的 AI 助手，或者按下方步骤安装到 Codex。保留目录中的脚本、参考文档和模板，AI 就能在需要时使用相应工具。
+| 画面元素 | 事件前 | 触发事件 | 事件后及后续 |
+|---|---|---|---|
+| 任务/清单 | 未开始或进行中 | 人物完成歌词对应的行动 | 更新完成状态，之后的场景继续显示已完成 |
+| 对话面板 | 当前人物正在发言 | 角色选择、回应或沉默 | 更新头像与文字，接着由后续歌词承接 |
+| 关系/状态 HUD | 保留人物当前关系 | 一次对话或行动产生结果 | 数值或图标变化与该结果一致 |
+| 天气与地点 | 建立可识别的空间 | 歌曲转折或人物行动改变环境 | 回访时保留时间、天气或人物留下的痕迹 |
 
-你可以这样开口：
+状态变化应有因果、时间点和跨镜延续。无法说明为何变化的心形、数字条或任务勾选，可以删掉或改成画面能解释的反馈。
 
-> 给你一首歌，再给你这个歌词驱动代码 MV 技能。先读懂技能和歌词，围绕歌曲的情绪设计人物故事，再把分镜做成可以预览和修改的代码动画。
+### 让角色在小画面里仍能辨认
 
-下面这段可以直接复制，并替换歌曲位置与创作要求：
+角色连续性需要从造型和动作两方面维护。每位主要角色记录稳定的发型、服装轮廓、身高比例、常用姿态和持物位置；场景清单另记当前朝向、位置、表情和道具状态。
 
-```text
-使用 $lyric-driven-code-mv，并先完整阅读这个技能的 SKILL.md。
+对两位以上主角，可以把同尺度头像或全身形象转成纯黑剪影排在一起。去掉颜色、名字和小道具后，检查头部/服装轮廓、身形比例和姿态是否仍有区别。成片中的群像尺寸和单人近景分别检查，避免将小尺寸角色精灵简单放大作为特写。
 
-我把歌曲音频和校对歌词一起交给你。
-请围绕歌词含义制作一支像素游戏风代码 MV：
-夜晚、两岸、纸船与灯光，两个人物通过行动逐步回应彼此。
-画幅为横屏 1920×1080，30 fps。
+像素质感来自可控的网格、轮廓、色阶、光源、材质和层次。阴影、前景遮挡、反光和次级动作有清晰职责时能加强空间感；噪点、模糊与堆叠装饰不能代替清楚的主体和动作。
 
-先截取原曲 37.2–49.2 秒，完成 12 秒代表片段。
-先给出歌词时间线和“目标→行动→反馈→结果”分镜，
-再制作人物、场景、字幕、音乐强调与转场。
-已有工程就沿用；没有工程就从内置 starter 开始。
+## 适合的创作
 
-完成后交付可编辑源码、分镜数据、素材来源记录和 MP4，
-检查时长、音视频流、字幕、转场与画面一致性。
-记录音乐证据状态，列出需要我试听确认的时间点。
-代表片段确认后，再按我指定的范围继续扩展。
-```
+- 像素 RPG 风格 MV，例如地图探索、任务推进、菜单选择、角色对白和状态更新。
+- 角色驱动的歌词故事，例如靠近、犹豫、等待、错过、回应、告别或重新出发。
+- 需要人物和场景跨镜头保持一致的代码动画。
+- 希望歌词面板、章节牌或游戏 HUD 融入画面设计的音乐视频。
+- 已经有工程或角色设定，想继续完成分镜、字幕、动画、同步或导出的项目。
 
-如果你已经有清晰的创作想法，可以把人物身份、故事主题、色调、横竖屏、片长和字幕语言一起写进去。只有音频时，如 AI 具备可用的转录能力，可以先准备歌词与时间线草稿，再结合你的校对继续制作。
+只有逐句显示歌词、K 歌字幕、素材蒙太奇或纯文字卡点时，使用更合适的 `music-to-video` Skill。已有 HyperFrames、Remotion 或其他工程时，优先沿用现成工程和其正常渲染入口。
 
-## 制作过程与交付结果
+## 想要的像素 RPG 成片效果
 
-通常从确定歌曲版本和创作范围开始，接着建立音乐时间线与歌词语义表，设计人物任务和镜头，再实现一段代表片段。预览时重点看人物是否真正发生了行动、重复段落是否有发展、字幕是否清楚，以及转场和摄像机移动是否自然。确认这段效果后，可以按你的要求扩展成更长的作品。
+像素 RPG 风格的重点是形成完整、连续的游戏演出。默认方向可借鉴参考教程中的清晰像素角色与场景、屋顶到城市/水边的连续旅程、随歌曲变化的天气和光线，以及副歌更强烈的视觉事件。标题场景可以通过菜单选择进入地图；地图和地点变化承接歌曲段落；人物用行动推进关系；头像、对话框、任务栏和状态 HUD 让观众读出人物此刻的处境。具体角色、故事、色板和高潮事件仍按歌曲原创设计。
 
-完成视频制作时，技能会指导 AI 整理以下内容：
+界面元素需要参与叙事。任务状态在人物执行任务后更新，关系状态由对话或行动触发，天气和地点回访也应延续前面发生的变化。重复副歌可以回到相似构图，但最好增加新回应、新信息或结果，让故事继续向前。
 
-- **成片与可编辑工程**：导出的 MP4，以及对应的动画源文件、场景、字幕和时间参数。
-- **分镜与分析数据**：歌词时间、人物行动、镜头安排、事件落点与音频分析结果。
-- **素材与署名记录**：歌曲、录音及其他资源的来源、许可与需要保留的署名信息。
-- **简短验收记录**：时长、分辨率、帧率、音视频流、抽帧检查及待试听确认项。
+实现时可以逐层构建：
 
-之后你可以继续对 AI 说“让人物在第二句时停下来”“把岸边灯光改成暖黄色”“让最后一次副歌增加一次回应”，让修改落实到具体镜头和代码中。仅需要分镜、短片段或调整已有工程时，也可以直接限定交付范围。
+1. **先定需求卡。** 写清主题、观众、希望观众留下的感受、音乐范围和规格。
+2. **再做歌曲地图和听感笔记。** 校对歌词与段落，分析局部速度和瞬态候选；不让不稳定 BPM 或长静音制造虚假的连续拍点。
+3. **提出视觉方向。** 风格未定时比较 2–3 张同一段内容的代表静帧，选定像素尺度、角色轮廓、配色、场景层次、字幕和 UI 规则；用户已经确定像素风时只比较其内部的构图和光色方向。
+4. **安排人物旅程。** 每段明确目标、阻碍、行动、画面反馈和结果；具体歌词按字面可视化，抽象歌词用情绪线索转译，重复副歌增加新信息或后果。
+5. **维护跨镜状态。** 记录人物位置、服装、道具、天气和界面字段，让后续场景接得上；一个镜头围绕一个主视觉事件展开。
+6. **逐段复核并导出。** 每秒接触表先扫字幕遮挡和越界，再对问题区逐帧或播放核查动作、转场与卡点。样片可以跳过，静帧和分镜仍能支撑验收。
 
-技术工具不会替你取得歌曲、录音、歌词或参考素材的使用许可；发布前请按素材实际许可确认可用范围及署名要求。提供未发行或私人音频前，请确认所用 AI/工具如何处理文件；仓库内置的本地脚本不会自动上传。
+目标视频的画面组织方式与分镜步骤见[像素 RPG 文字制作案例](skills/lyric-driven-code-mv/references/pixel-rpg-production-case.md)。案例里的故事内容是可替换的项目假设，实际创作应根据你提供的歌曲与歌词重新设计。
 
-## 内置工具与原创模板
+## 从歌曲到成片的制作流程
 
-仓库内置一套 **12 秒纸船与两岸灯光演示**，包含人物动作、场景变化、摄像机留边、尾段转场、高分辨率字幕和本地生成的原创节奏。可以先把这个工程跑通，再让 AI 按你的歌曲与分镜改写。
+### 1. 确认输入和项目范围
 
-- **离线音频分析**：使用 Node 内置模块与 FFmpeg，输出能量、停顿、起音和 BPM/相位候选；支持输入已知 BPM、合并邻近候选，并明确标识低置信网格。
-- **分镜校验**：检查时间范围、镜头覆盖、角色/道具引用、装置类型、章节覆盖、HUD 数值范围与材质变体，并提示跨镜歌词、显式踩拍和授权记录缺项。
-- **确定性 QA**：预热后重复、逆序和乱序求值同一批帧，单独记录首次光栅差异；适配器可提供清理钩子，让浏览器等资源在检查后正常退出。
-- **同步候选图**：把能量、候选拍点、镜头边界和字幕区间放在同一时间轴，输出SVG与JSON并报告起点误差，帮助定位需要试听核对的位置。
-- **卡点校验**：标了 `event.sync:"beat"` 的动作会被拿去和 `music.beats` 网格比对，偏离超过 `beatToleranceMs`（默认 80 ms）就报警告，`--strict` 下直接失败。完整链路见 [音乐卡点：从拍点到校验](#音乐卡点从拍点到校验)。
-- **可读变化密度**：`hud-density.mjs` 统计切镜、材质、HUD、事件、音效、歌词句头和章节牌七类时间点，报告最长空白窗与单镜内部空窗；同一时刻的多项变化只算一个点。它帮助检查变化密度，不代替对动作是否易读的人工审片。
-- **平台安全区**：`safe-area.py` 在帧或视频上叠顶部、底部 8.5%、右侧 6.5%、4:3 与 9:16 五条参考线，字幕底边与 HUD 关键读数必须躲开；它在开发中抓出过双语字幕压底、HUD 压顶两个真问题。
-- **点阵标题牌**：`pixel-font.py` 把数字与字母烘成 6×8 点阵（图集 PNG + 点阵 JSON），中文仍用系统字体，混排接近参考片的标题牌质感。
-- **最小渲染器**：`minimal-renderer.py` 用 Pillow 与 FFmpeg 生成占位画面，检查标题牌、数值 HUD、字幕和版面位置；它不绘制完整场景，不是成片渲染器。正式画面请使用 starter 或现有视频工程。
-- **装置模板库**：`assets/devices/` 五个可直接粘的骨架（私信、读档、清单、结算、双轴滑块），各带三条外壳规则、`scene.hud[]` 与 4–5 个带数值事件；字段映射见 [装置模板](skills/lyric-driven-code-mv/references/device-templates.md)。
-- **音效合成**：`scripts/sfx.mjs` 用振荡器与确定性噪声合成八种音效（tick / type / click / whoosh / confirm / error / riser / chime），长度严格等于 `project.duration`，首尾自动淡入淡出；`project.sfx[]` 与 `scene.sfx[]` 由校验器检查类型、时间、增益、`hitAt` 与 visual/beat/free 锚点。两层对齐关系见 [音效层与卡点](skills/lyric-driven-code-mv/references/sfx-and-beat.md)。
-- **音轨追踪与单帧检查**：音频重定位核对同一素材，导出保存实际音轨哈希与署名记录；可先导出某个时点的世界层PNG，再检查正式成片字幕。
-- **两种导出方式**：管道直出适合快速验证；PNG 落盘与恢复适合保留渲染进度。
-- **画面验收**：通过接触表查看整体叙事，再检查每镜和转场的关键帧。
+先确认歌曲文件与录音版本、歌词文本、使用范围、画幅、帧率、目标时长、字幕语言，以及你已有的人物设定、风格参考或工程。若只有音频，AI 可以先生成待校对的歌词或时间线草稿；最终歌词和关键时点应以你确认的材料为准。
 
-内置模板使用已有 Node.js、FFmpeg 与 FFprobe。HTML/Canvas/SVG 工程可按需要使用，HTML 动效路线可选择 HyperFrames，React 工程可选择 Remotion；其他框架的依赖由 AI 根据现有环境和你的选择配置。设计分镜时先选承载叙事的装置（聊天、游戏系统、时间轴、章节牌或材质舞台），再拆场景；可用 `chapters`、`scene.hud` 和 `materialVariant` 记录章节、情绪数值和同构图变奏。镜头不设固定秒数上限，按信息密度安排，建议每 8–12 秒有一次可读变化。
+如果人物或剧情尚未确定，Skill 会结合歌曲本身提出创意方向。与真实创作缘起相关的事实要有来源，原创角色与情节则明确作为改编或虚构演绎。
 
-参考像素游戏歌词视频时，可在分镜顶层加入 `captionStyle`，把歌词变成画面内 UI，而不是普通外挂字幕。`mode:"scene-panel"` 会在预览和 ASS 导出中同步生成暖白主歌词、淡色辅助行、红粉描边、深色像素面板、角标装饰和章节牌；`placement:"integrated"` 会把面板放进画面下方安全区。未提供该字段仍使用旧的普通底部双语字幕，旧分镜无需修改。
+### 2. 建立歌词与音乐时间线
 
-```json
-"captionStyle": {
-  "mode": "scene-panel",
-  "placement": "integrated",
-  "lines": 2,
-  "primary": { "color": "#FFF1D6", "outline": "#E56B7A", "shadow": "#24152B" },
-  "secondary": { "color": "#F3C8C7", "outline": "#24152B" },
-  "panel": { "color": "#24152B", "alpha": 0.88, "border": "#F0A06D", "accent": "#FFD58A" },
-  "chapter": { "show": true, "position": "top", "duration": 2.4 }
-}
-```
+确定剪辑范围后，将歌词、镜头、事件和音频统一到成片时间。逐句记录起止时间、段落、重复关系和需要强调的动作；机器分析可以提供能量、停顿、起音、BPM 和拍点候选。
 
-这套配置只负责歌词和章节牌的视觉层，不会替代歌词时间校对；关键动作仍按“能量自动、关键动作确认后卡点”的混合模式落到时间线上。
+分析数据用于定位和规划。拍点采用局部窗口并标注观测/预测证据；全局速度不能覆盖变速和静音段。歌词是否准确、逐词边界以及动作是否真正落在听感重点上，需要按交付范围核对音频。同步报告只为可信候选生成建议，需人工接受后才能写回分镜。没有试听时，交付记录应保留待核对区间。
 
-细化装置、HUD、字幕和参考片证据时，按需阅读 [装置与章节](skills/lyric-driven-code-mv/references/story-devices.md)、[HUD 与字幕](skills/lyric-driven-code-mv/references/hud-and-subtitles.md)、[渲染故障预防](skills/lyric-driven-code-mv/references/render-pitfalls.md) 与 [参考片取证](skills/lyric-driven-code-mv/references/reference-film-analysis.md)。这些资料把画面观察、可复现测量和技术推断分开记录。
+### 3. 写角色卡和视觉账本
 
-## 音乐卡点：从拍点到校验
+角色卡记录角色功能、头部和服装轮廓、比例、常用姿态、识别物及持物位置。多位主角可制作同尺度剪影对照，确认去掉颜色和姓名牌后仍能辨认。关键动作另做姿态条或关键帧表。
 
-上面那句"先给能量和拍点候选，关键动作由你确认后再锁定为卡点"，落到工具上是四步，每步都有输出：
-
-**① 分析音轨，拿到拍点候选**
-
-```powershell
-node skills/lyric-driven-code-mv/scripts/analyze-audio.mjs 'path/to/song.wav' --start 37.2 --duration 12 --out work/analysis.json
-```
-
-已知速度就直接给，并把依据写清，工具会停止猜：
-
-```powershell
-node skills/lyric-driven-code-mv/scripts/analyze-audio.mjs 'path/to/song.wav' --start 37.2 --duration 12 --bpm 110 --bpm-source metadata --bpm-evidence '曲目页标注 110 BPM' --out work/analysis.json
-```
-
-输出是 `status:"draft"` 的报告，含 `energy`、`pauses`、`onsets`、`tempo`（BPM + 相位 + 置信度 + 半速/双速歧义）和 `beats` 网格。对合成的 120 BPM 节拍实测：
+视觉账本让每句歌词都有画面落点。可用下面的结构逐条整理：
 
 ```text
-bpm 120 | status=estimated | confidence 0.9855 | periodSeconds 0.5 | phaseSeconds 0.000484
-beats 24 个（0.000484, 0.500484, 1.000484 …） | onsets 24
-ambiguities: 60（half）、240（double）
+歌词 ID：
+画面主体与景别：
+角色目标：
+可见动作：
+即时反馈：
+本镜结果：
+跨镜需延续的状态：
+材质、光线和次级动作：
 ```
 
-**② 把拍点写进分镜**
+相邻歌词可以留在同一个地点，但焦点、动作或故事状态应有所推进。具体镜头时长由信息密度和音乐结构决定，8–12 秒出现一次可读变化是制作建议，留白也可以服务情绪。
 
-`music.beats[]` 存拍点秒数，必须严格递增且都落在 `[0, duration)` 内；要在拍上发生的动作标 `event.sync:"beat"`：
+### 4. 制作分镜和视觉系统
 
-```json
-"music": { "status": "draft", "beats": [0.0, 0.5, 1.0, 1.5] },
-"events": [
-  { "at": 5.501, "action": "灯亮的一瞬落在拍上", "sync": "beat" },
-  { "at": 5.63,  "action": "这一下晚 130ms，校验器会报", "sync": "beat" }
-]
-```
+选择聊天、游戏系统、地图、计数器、章节牌、关系面板或材质舞台等叙事装置，再设计每镜的目标、行动、反馈和结果。把章节、HUD 数值、歌词与事件写进分镜数据，作为场景实现的共同依据。
 
-**③ 让校验器判，不靠眼睛**
+角色、地图、对话框、字幕、章节牌和 HUD 应使用一致的像素尺度与视觉规则。场景切换时检查服装、道具、位置、天气、界面状态和镜头方向的连续性。视觉检查应包含带字幕版和无字幕版。
 
-```powershell
+### 5. 选择实现方式并预览
+
+沿用你现有的代码视频框架。没有工程时，可以从本 Skill 的 starter 模板开始，复制完整目录并替换技术检查画面，再实现实际项目的场景和人物。
+
+动态检查片段是可选的。需要验证复杂动作、镜头衔接、字幕阅读或状态变化时，可先渲染一段覆盖这些风险的短片；跳过动态检查时，可以用角色卡、关键帧、动作条、静态接触表和分镜校验继续制作。
+
+### 6. 按要求导出和验收
+
+成片任务需按目标规格导出。用 FFprobe 核对时长、画幅、帧率和音视频流，完整解码检查容器与编码问题，抽帧查看开头、结尾、关键动作、字幕安全区和转场边界。具备播放条件时，再按实际交付范围播放并核对音乐与画面。
+
+交付时写明完成了哪些检查、哪些落点仍待核对，以及工程、分镜、音乐和素材记录的位置。机器估拍或静态抽帧结果不能单独作为人工听辨或动态播放的证明。
+
+### 可以按阶段交付
+
+| 你当前要做的阶段 | 可以先交付什么 | 完成这一步后可以继续什么 |
+|---|---|---|
+| 方向讨论 | 歌曲理解、原创故事方向、角色和界面方案 | 选定故事、人物、画风和制作范围 |
+| 分镜规划 | 歌词时间表、角色卡、视觉账本和完整分镜 | 实现关键帧、动作和转场 |
+| 画面开发 | 角色、场景、界面、字幕预览和技术 QA | 确认视觉规则后扩展目标时段 |
+| 完整制作 | 可编辑工程、音视频成片、素材记录和验收结果 | 按试听或审片意见返修指定范围 |
+
+每个阶段都可以作为独立交付。用户没有要求整曲完成时，应以指定范围收尾；需要快速确认时可选做动态检查片段，跳过后仍可以靠角色卡、关键帧、接触表、分镜结构和工程预览继续工作。
+
+## 逐词字幕与音乐同步
+
+默认可以使用整句歌词字幕。分镜 JSON 还支持可选的 `lyrics[].words[]`，用来保存逐词高亮所需的文本和时间。每个词条由 `text`、`start`、`end` 组成，按顺序拼接后必须与可见歌词完全一致。词级时间以成片秒记录，字幕预览与 ASS 导出使用同一组时间。
+
+逐词时间应来自音频核对或可信对齐。把一句歌词均匀切分成词只适合临时展示，不能作为已完成的演唱同步结果。需要精确跟唱字幕时，优先使用整句字幕直到词界得到确认。
+
+| 状态 | 表示什么 | 交付记录 |
+|---|---|---|
+| `illustrative` | 自编演示时点、占位或原创节奏 | 标明演示用途和时点 |
+| `draft` | 机器候选、待校对歌词或尚未听辨的同步 | 记录方法、限制和具体待核对时间段 |
+| `verified` | 人工检查过相关音频、歌词与重要落点 | 写清核对人、时间和覆盖范围 |
+
+BPM、拍点、能量峰和自动起音检测都是规划线索。明确标记为踩拍的事件可以由同步检查器与候选节拍比较，候选置信值低时不提供吸附建议。默认 80 ms 容差用于结构检查，不代表听感自动通过。详见[同步候选图](skills/lyric-driven-code-mv/references/sync-review.md)、[音频与授权](skills/lyric-driven-code-mv/references/audio-and-rights.md)和[时间与分镜](skills/lyric-driven-code-mv/references/storyboard-and-timing.md)。
+
+### 音乐候选如何进入制作流程
+
+先确认歌曲版本、剪辑起点和成片长度，再从本机音轨抽取候选数据。示例命令只分析一段歌曲并把结果保存到项目自己的工作目录：
+
+~~~powershell
+node skills/lyric-driven-code-mv/scripts/analyze-audio.mjs "work/song.wav" --start 0 --duration 12 --out work/analysis.json
+~~~
+
+此示例分析歌曲开头 12 秒，实际制作时将起点与时长改成项目所需范围。报告中的时点使用成片秒，原曲起点单独保存在偏移字段。读取候选后，可以按“句起止、镜头切换、动作峰值、歌词重音”的顺序整理分镜；只将确实要对齐的动作标记为节拍事件。
+
+接下来用校验器检查分镜结构：
+
+~~~powershell
 node skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs work/storyboard.json
-node skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs --strict work/storyboard.json
-```
+node skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs --delivery work/storyboard.json
+~~~
 
-上面那两条事件的实测结果：
+普通检查主要看结构和时间范围；`--delivery` 还检查许可、音乐证据和草稿待核对清单。若需要把候选拍点、镜头与字幕放在一张图上查看，可生成同步检查图：
+
+~~~powershell
+node skills/lyric-driven-code-mv/scripts/visualize-sync.mjs work/storyboard.json work/analysis.json --out work/sync-review.svg
+~~~
+
+每条音效分别记录波形起点 `at`、希望强调的落点 `hitAt` 和同步锚点 `anchor`。锚点可指向画面事件、音乐拍点或自由氛围；较长的音效可以早于动作起声，但峰值落点仍应清晰。需要输出音效的 starter 项目可在正常导出命令上加入 `--sfx`。逐步示例见[音效与卡点](skills/lyric-driven-code-mv/references/sfx-and-beat.md)。
+
+### 画面内歌词面板
+
+分镜可选用像素面板来承载歌词和章节牌，避免字幕像贴在画面之外。下面的片段示意可调整的主要视觉字段：
+
+~~~json
+{
+  "captionStyle": {
+    "mode": "scene-panel",
+    "placement": "integrated",
+    "lines": 2,
+    "primary": { "color": "#FFF1D6", "outline": "#E56B7A" },
+    "secondary": { "color": "#F3C8C7" },
+    "panel": { "color": "#24152B", "alpha": 0.88, "border": "#F0A06D" },
+    "chapter": { "show": true, "position": "top", "duration": 2.4 }
+  }
+}
+~~~
+
+预览和 ASS 字幕导出共享该配置；歌词内容和时间仍来自分镜数据。没有提供这项配置时，已有普通字幕布局继续可用。更完整的颜色、描边和安全区设置见[HUD 与字幕](skills/lyric-driven-code-mv/references/hud-and-subtitles.md)。
+
+## 内置工具和模板
+
+| 文件或工具 | 用途 |
+|---|---|
+| `scripts/analyze-audio.mjs` | 调用本机 FFmpeg 分析能量、停顿、起音与节拍候选 |
+| `scripts/lrc.mjs` | 将 LRC 句级歌词转换为带起止时间的歌词条目 |
+| `scripts/new-storyboard.mjs` | 生成可继续填写的分镜骨架 |
+| `scripts/validate-storyboard.mjs` | 检查项目时长、歌词、场景、角色/道具引用、事件、字幕和交付字段 |
+| `scripts/qa.mjs` | 对指定时间的渲染帧进行重复、逆序和乱序求值比较 |
+| `scripts/visualize-sync.mjs`、`scripts/timeline-sync.py` | 将音乐候选、镜头边界和歌词区间放到同一时间轴检查 |
+| `scripts/hud-density.mjs`、`scripts/safe-area.py` | 辅助查看可读变化密度与平台安全区 |
+| `scripts/sfx.mjs` 与 starter 的 `--sfx` | 按分镜事件合成和混合代码音效 |
+| `assets/devices/` | 私信、读档、清单、结算和双轴滑块等分镜装置骨架 |
+| `assets/scenes/` | 可配置的像素场景模块，可用作代码工程的起点 |
+| `assets/examples/visual-ledger-demo.json` | 展示如何把每条歌词细化成镜头、动作、结果和完成度计划 |
+
+`assets/templates/starter/` 提供纯帧求值、分镜时间线、预览和导出入口。它的默认画面为色块、网格和移动标记，用于检查摄像机、字幕、转场与导出链路；要呈现具体歌曲，需替换技术画面并编写对应场景。
+
+Skill 中的 Node 脚本使用 Node 内置模块。starter 手动导出需有 Node.js、FFmpeg 和 FFprobe，FFmpeg 构建需支持 H.264、AAC 与 ASS 字幕滤镜。仓库内脚本不需要 npm 包、API Key 或账号。部分 Python 画面辅助脚本使用 Pillow，只有运行这些脚本时才需要安装 Pillow。HyperFrames、Remotion、模型服务和其他第三方依赖由具体项目需要决定。
+
+## 安装、环境和使用范围
+
+### 把 Skill 交给 AI 助手
+
+在 Codex 中，将仓库的 `skills/lyric-driven-code-mv/` 目录复制到个人 Skills 目录下的同名文件夹，重新加载 Skills 后即可用 `$lyric-driven-code-mv` 调用。也可以把完整 Skill 目录提供给支持本地文件读取的助手。复制完整目录后，AI 才能按需读取脚本、模板和详细参考资料。
+
+如果尚未安装，按[起步指南的安装步骤](GETTING-STARTED.md#2-拿到仓库并装-skill)操作。已经有一个同名目录时，先核对目标目录与仓库版本，再决定如何更新，避免覆盖自己的本地修改。
+
+### 工具要求
+
+| 任务 | 需要什么 |
+|---|---|
+| 阅读 Skill、设计角色、写故事或分镜 | 可读取 Skill 文件的 AI 助手 |
+| 运行分镜和逐帧 QA | Node.js；按所用画法提供 RGBA 帧渲染入口 |
+| starter 导出 MP4 | Node.js、FFmpeg、FFprobe；编码器需支持 H.264 和 AAC，字幕需支持 ASS |
+| 音频候选分析 | Node.js 与本机 FFmpeg |
+| 运行 Pillow 辅助脚本 | Python 与 Pillow，仅在确实调用这些脚本时需要 |
+| 使用现有 HTML/React 框架 | 沿用项目已经配置的浏览器和框架依赖，缺少时先确认安装需求 |
+
+自动分析会在本机调用脚本和已有工具，不会替用户下载模型、安装新框架、申请 API Key 或订阅服务。额外包、浏览器、模型或付费服务由具体项目决定，先查现有环境和授权再配置。
+
+### starter 检查模板的用途
+
+starter 的色块、网格和移动标记用于检查像素摄像机、纯帧求值、转场、字幕和导出。画面文案也属于技术检查内容，不对应真实歌曲、歌词或故事。该模板聚焦代码链路检查，项目角色、故事和美术方向应依据歌曲与创作要求确定。
+
+开始实际作品时，先复制整个 starter 到视频工程目录，改写时间线、歌词、画法和素材路径，再用项目自己的画面检查叙事效果。修改输入音轨、分镜、参数或渲染源码后，按模板文档使用新的工作帧目录，或重新生成以确保恢复数据匹配。
+
+## 可以直接使用的任务说明
+
+将下面的内容复制给能够读取 skill 目录的 AI 助手，并补充方括号里的项目资料：
 
 ```text
-普通模式：警告：scenes[0].events[1].at: sync:"beat" 最近节拍=5500ms，偏差 offsetMs=130；容差 80ms
-         分镜校验通过。                                    退出码 0
-strict：  严格检查未通过：仍有 1 条警告。                    退出码 1
+使用 $lyric-driven-code-mv，先阅读 SKILL.md 和像素 RPG 文字制作案例。
+
+歌曲与版本：[歌曲文件、歌名和录音版本]
+歌词：[校对歌词文件或文本]
+制作范围：[整曲 / 指定片段 / 分镜 / 工程 / 成片]
+画幅与帧率：[例如横屏 1920×1080、30 fps]
+风格和故事要求：[我已确定的角色、主题、色彩、参考画面]
+现有工程：[文件夹路径；没有则写“无”]
+动态检查片段：[需要时制作；也可以跳过]
+
+请按实际歌词和音乐内容组织人物行动、逐句镜头、RPG 界面与状态变化。
+先给我本次范围对应的工作结果，再按指定范围制作与验收。
+复用现有工程和依赖，逐词时点只记录已核对的边界。
+完成后列出交付文件、已做检查和仍待人工确认的时间点。
 ```
 
-偏 0.5 ms 的那条不报警，偏 130 ms 的这条被抓出来。容差由 `project.settings.beatToleranceMs` 控制，默认 80 ms。校验器用毫秒报告偏差；负值表示提前，正值表示滞后。以下只摘录关键字段，具体提示文字以当前命令输出为准。
+## 快速开始
 
-**④ 画出来看整段有没有系统性错位**
+1. 将仓库中的 `skills/lyric-driven-code-mv/` 整个目录安装到 Codex 的 Skills 目录，或在支持技能文件读取的 AI 工具中提供整个目录。
+2. 在对话中说明歌曲、歌词、目标效果和交付范围，或使用上方任务说明模板。
+3. 让 AI 按任务读取 `SKILL.md` 和对应参考文档。制作流程可从[起步指南](GETTING-STARTED.md)了解，目标像素 RPG 演出可从[文字制作案例](skills/lyric-driven-code-mv/references/pixel-rpg-production-case.md)开始。
+4. 没有现成工程且要检查 starter 时，从仓库根目录运行：
 
 ```powershell
-node skills/lyric-driven-code-mv/scripts/visualize-sync.mjs work/storyboard.json work/analysis.json --out work/sync-review.svg
-python skills/lyric-driven-code-mv/scripts/timeline-sync.py 'path/to/song.wav' --storyboard work/storyboard.json -o work/timeline.png --json work/timeline.json
+node skills/lyric-driven-code-mv/assets/templates/starter/export.mjs --help
 ```
 
-前者出 SVG + JSON（能量、候选拍点、镜头/字幕区间、每个起点误差），并检查 `duration`/`sourceOffset` 与分镜是否一致；后者更快，出 PNG 和一份切点到最近拍点的偏移统计：
+starter 说明、命令参数和输出要求见[模板说明](skills/lyric-driven-code-mv/assets/templates/starter/README.md)。音频、分析结果、输出视频和临时帧应放在实际视频工程目录。
 
-```text
-duration 12.00s | beats 23 | 120 BPM (speculative) | cuts 2 | lyrics 4
-cut-to-beat offset median 250ms, max 500ms, within 80ms: 1/2
-```
+## 按需阅读
 
-`within 80ms` 比例高说明切点大致落在拍上；median 偏大说明整段错位，该回去改时窗，而不是改画面。
+- [主 Skill 工作流程](skills/lyric-driven-code-mv/SKILL.md)：何时调用、如何研究歌曲、从分镜到验收的工作规范。
+- [像素 MV 制作起步指南](GETTING-STARTED.md)：逐步运行工具、接入歌曲、排错和整理交付。
+- [像素 RPG 文字制作案例](skills/lyric-driven-code-mv/references/pixel-rpg-production-case.md)：以标题菜单、地图、角色对白和状态 UI 组织完整演出的文字案例。
+- [像素 MV 分阶段制作](skills/lyric-driven-code-mv/references/pixel-mv-production.md)：从歌曲分析、阶段提示词到静态检查和完整制作的详细流程。
+- [代码控制视觉提示法](skills/lyric-driven-code-mv/references/code-directed-visuals.md)：逐句视觉账本、实现提示词和代码画面检查。
+- [像素世界与演出](skills/lyric-driven-code-mv/references/pixel-game-visuals.md)：角色差异、轮廓、光线、材质和画面检查方式。
+- [时间与分镜格式](skills/lyric-driven-code-mv/references/storyboard-and-timing.md)：成片时间、分镜字段、词级字幕与转场规则。
+- [音频与授权](skills/lyric-driven-code-mv/references/audio-and-rights.md)：音轨来源、使用信息和音乐证据记录。
+- [依赖与交付](skills/lyric-driven-code-mv/references/dependencies-and-delivery.md)：工具路线、渲染恢复、验收及交付清单。
+- [参考片取证记录](skills/lyric-driven-code-mv/references/reference-film-analysis.md)：参考视频的观察范围、可见证据和推断边界。
+- [维护说明](MAINTENANCE.md)：仓库测试、修改流程与当前实现注意事项。
 
-**⑤ 叠音效层：按事件选择同步锚点**
+## 本地开发检查
 
-不同音效可以服务画面动作、音乐重拍或自由氛围；长 whoosh/riser 可以先起声，再让主体攻击或峰值落点。参考作品里测到的瞬变分布只能描述那支作品，不能推出“音效不该踩拍”或“所有音效都该踩拍”。本 Skill 为每条音效明确区分波形起点 `at`、目标落点 `hitAt` 与锚点 `anchor`。
-
-音效写进分镜，和画面事件同层，才能被同一份校验器检查：
-
-```json
-"project": { "sfx": [{ "at": 0, "type": "riser", "gain": 0.40 }] },
-"scenes": [{
-  "events": [{ "at": 3.0, "action": "数字跳到 42", "sync": "beat" }],
-  "sfx":    [{ "at": 3.0, "hitAt": 3.0, "anchor": "visual", "type": "tick", "gain": 0.60 }]
-}]
-```
+仓库使用 Node 自带测试运行器，可以从仓库根目录执行：
 
 ```powershell
-# 一条命令：合成音效轨 → 与音轨混音 → 编码，直接出带音效的成片
-node skills/lyric-driven-code-mv/assets/templates/starter/export.mjs --storyboard work/storyboard.json --audio 你的歌.wav --sfx --out work/final.mp4
-```
-
-要单独拿一条音效轨（贴进别的剪辑软件），或自己控制混音权重：
-
-```powershell
-node skills/lyric-driven-code-mv/scripts/sfx.mjs --from-storyboard work/storyboard.json --out work/sfx.wav --report work/sfx-report.json
-ffmpeg -y -i work/demo.mp4 -i work/sfx.wav -filter_complex "[0:a][1:a]amix=inputs=2:duration=first:weights=1 0.85:normalize=0,alimiter=limit=0.95" -c:v copy -c:a aac -b:a 192k work/final.mp4
-```
-
-`--sfx` 默认权重 0.85，`--sfx-gain 0.6` 可调；分镜里一个 sfx 都没写时它直接报错，不会悄悄漏掉音效。八种音效全是代码合成的（tick / type / click / whoosh / confirm / error / riser / chime），没有采样素材也就没有授权问题。
-
-验证器要如实解释：只给混音轨时，事件附近 RMS 上升只能说明观察到瞬变，纯 BGM 鼓点也可能触发，**不能证明来源是 SFX**。如需归因候选，额外提供完全对齐的 BGM-only 无损参考轨：
-
-```powershell
-node skills/lyric-driven-code-mv/scripts/verify-sfx.mjs --audio work/mixed.wav --reference-audio work/music-only.wav --storyboard work/storyboard.json --window-ms 50 --out work/sfx-evidence.json
-```
-
-同路径差分也只是候选证据；最终仍须试听，并检查最终有损编码。`9/9` 表示九个事件窗口都观察到瞬变，不等同于九个 SFX 均已完成因果归因或峰值卡点验证。
-
-**能证明什么、不能证明什么**
-
-- 能：拍点网格在哪、哪个动作偏了多少毫秒、整片切点是否系统性地不在拍上。
-- 不能：`status:"draft"` 不能升级成 `verified`——那需要人工核听，并填 `evidence.reviewer` 与含时区的 `reviewedAt`。
-- 不能：BPM 永远带半速/双速歧义（80 BPM 的歌在 160 BPM 网格上也"对得齐"），工具把歧义列出来，选哪个要人耳定。
-- 字幕不必逐句贴拍；只有显式标了 `sync:"beat"` 的事件才受 80 ms 容差约束。
-
-## 从零到成片
-
-第一次用、又不打算让 AI 代劳的，读 [GETTING-STARTED.md](GETTING-STARTED.md)：它把装依赖、装 skill、跑通 12 秒、单帧排错、接入自己的歌、离线找拍点、三档校验、断点续渲和验收串成一条可以直接照抄的路径，每一步都给出实测输出和出错处理。文中所有耗时、帧数、BPM 与偏差毫秒均为真实运行结果。
-
-## 安装
-
-从仓库根目录获取本项目；若尚未克隆：
-
-```powershell
-git clone https://github.com/zizhengLI4/lyric-driven-code-mv-skill.git
-cd lyric-driven-code-mv-skill
-```
-
-复制整个 `skills/lyric-driven-code-mv` 目录到 Codex 的 skills 目录，模板、脚本和参考文档都随安装保留；不要只复制 `SKILL.md`。Windows 可用：
-
-```powershell
-$taskSkillRoot = if ($env:CODEX_HOME) { Join-Path $env:CODEX_HOME 'skills' } else { Join-Path $env:USERPROFILE '.codex/skills' }
-New-Item -ItemType Directory -Path $taskSkillRoot -Force | Out-Null
-$taskSkillTarget = Join-Path $taskSkillRoot 'lyric-driven-code-mv'
-if (Test-Path -LiteralPath $taskSkillTarget) { throw '同名 skill 已存在，请先检查内容再合并。' }
-Copy-Item -LiteralPath './skills/lyric-driven-code-mv' -Destination $taskSkillTarget -Recurse
-```
-
-安装 skill 不会安装视频框架、模型或 API。最小 starter 需要已有 Node.js、FFmpeg（含 `libx264`、`libass`）和 FFprobe；代码侧使用 Node 内置模块，不需 `npm install`。`Pillow` 仅供接触表、字幕/安全区检查等 Python 辅助脚本使用；使用这些脚本前可检查 `python -c "import PIL"`，缺失时按需安装：
-
-```powershell
-python -m pip install -r skills/lyric-driven-code-mv/requirements.txt
-```
-
-macOS/Linux 可将整个目录复制到 `~/.codex/skills/lyric-driven-code-mv`（若设置了 `CODEX_HOME`，使用其下的 `skills/` 目录）。其他框架、字体、模型、API 或付费服务均为可选项，不会由 Skill 静默安装或调用。已安装同名 Skill 时先备份并比较本地改动，再更新，避免覆盖个人修改。
-
-## 先跑通 12 秒
-
-在仓库根目录运行：
-
-```powershell
-New-Item -ItemType Directory -Path 'work' -Force | Out-Null
-Copy-Item -LiteralPath 'skills/lyric-driven-code-mv/assets/templates/starter' -Destination 'work/my-mv' -Recurse
-node work/my-mv/export.mjs --out work/demo.mp4
-node skills/lyric-driven-code-mv/scripts/qa.mjs work/my-mv/frame.mjs --duration 12 --fps 30 --out work/qa.json
-```
-
-默认输出 1920×1080、30 fps；开头标注“演示时点 · 原创合成节奏”。也可以让分镜 JSON 直接控制项目时长、帧率、尺寸、字幕、镜头边界、转场与音乐状态：
-
-```powershell
-node work/my-mv/export.mjs --storyboard skills/lyric-driven-code-mv/assets/storyboard-example.json --out work/storyboard-demo.mp4
-node work/my-mv/export.mjs --storyboard work/storyboard.json --audio 'path/to/song.wav' --out work/song-mv.mp4
-node skills/lyric-driven-code-mv/scripts/qa.mjs work/my-mv/frame.mjs --storyboard work/storyboard.json --out work/song-qa.json
-```
-
-模板通过 `SCENE_RENDERERS[scene.id]` 选择画法；内置 `send` 与 `receive`，新增故事镜头时由 AI 实现对应画法。真实歌曲的字幕和时窗只修改 JSON；音频为原曲时按 `project.sourceOffset` 裁剪。成片默认不烧草稿水印（`draft` 也不烧，要成片内可见提示须显式写 `project.draftMark:true`），核对进度由导出资产清单记录。预览、音轨时基与恢复规则见 [starter README](skills/lyric-driven-code-mv/assets/templates/starter/README.md)。
-
-## 开发与检查
-
-```powershell
-node skills/lyric-driven-code-mv/scripts/analyze-audio.mjs 'path/to/song.wav' --start 37.2 --duration 12 --out work/analysis.json
-node skills/lyric-driven-code-mv/scripts/analyze-audio.mjs 'path/to/song.wav' --start 37.2 --duration 12 --bpm 110 --out work/known-bpm.json
-node skills/lyric-driven-code-mv/scripts/visualize-sync.mjs work/storyboard.json work/analysis.json --out work/sync-review.svg
-node skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs skills/lyric-driven-code-mv/assets/storyboard-example.json --delivery
-node skills/lyric-driven-code-mv/scripts/hud-density.mjs skills/lyric-driven-code-mv/assets/storyboard-example.json --max-gap 12
-python skills/lyric-driven-code-mv/scripts/timeline-sync.py work/beat120.wav --storyboard skills/lyric-driven-code-mv/assets/storyboard-example.json -o work/timeline.png
-python skills/lyric-driven-code-mv/scripts/safe-area.py --video work/demo.mp4 --at 3 10 -o work/safe-check.png
-python skills/lyric-driven-code-mv/scripts/minimal-renderer.py skills/lyric-driven-code-mv/assets/storyboard-example.json --probe 0 120 300 --out work/probe
 node --test
+git diff --check
 ```
 
-测试可使用 `FFMPEG_PATH` / `FFPROBE_PATH` 指向已有程序；PATH 中缺少工具时只跳过需要实际解码/编码的用例，并说明原因。显式配置无效路径会报错。`--strict` 把结构警告升级为失败，通过它仍需核听；草稿交付须附 `music.pendingChecks` 具体时间区间与检查内容。使用说明见 [SKILL.md](skills/lyric-driven-code-mv/SKILL.md)、[时间与分镜](skills/lyric-driven-code-mv/references/storyboard-and-timing.md)、[像素/字幕](skills/lyric-driven-code-mv/references/pixel-game-visuals.md)、[音频/授权](skills/lyric-driven-code-mv/references/audio-and-rights.md)、[依赖/验收](skills/lyric-driven-code-mv/references/dependencies-and-delivery.md)。
-
-长期维护、复现反馈、兼容性、发布与回退流程见 [维护指南](MAINTENANCE.md)。同步图的误差解释与器乐叙事字幕说明见 [同步复核](skills/lyric-driven-code-mv/references/sync-review.md)；音效与拍点的两层关系见 [音效层与卡点](skills/lyric-driven-code-mv/references/sfx-and-beat.md)；装置骨架的字段映射见 [装置模板](skills/lyric-driven-code-mv/references/device-templates.md)；40 条参考作品的复盘与改进依据见 [案例研究](docs/CASE-STUDY-2026-11.md)。
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=zizhengLI4%2Flyric-driven-code-mv-skill&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=zizhengLI4/lyric-driven-code-mv-skill&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=zizhengLI4/lyric-driven-code-mv-skill&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=zizhengLI4/lyric-driven-code-mv-skill&type=date&legend=top-left" />
- </picture>
-</a>
+如果改动涉及某个脚本，也可先运行该脚本的 `--help` 和相应测试，再执行全量测试。媒体输出的验收命令与清单见[依赖与交付](skills/lyric-driven-code-mv/references/dependencies-and-delivery.md)。

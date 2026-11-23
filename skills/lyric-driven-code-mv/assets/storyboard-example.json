@@ -9,7 +9,7 @@
     "height": 1080,
     "virtualWidth": 384,
     "virtualHeight": 216,
-    "seed": "paper-boat-original-v1",
+    "seed": "pixel-render-check-v1",
     "audio": {
       "path": "demo-beat.wav",
       "timebase": "clip",
@@ -23,53 +23,63 @@
     "mode": "scene-panel",
     "placement": "integrated",
     "lines": 2,
-    "primary": { "color": "#FFF1D6", "outline": "#E56B7A", "shadow": "#24152B" },
-    "secondary": { "color": "#F3C8C7", "outline": "#24152B" },
-    "panel": { "color": "#24152B", "alpha": 0.88, "border": "#F0A06D", "accent": "#FFD58A" },
-    "chapter": { "show": true, "position": "top", "duration": 2.4 }
+    "primary": {
+      "color": "#FFF1D6",
+      "outline": "#E56B7A",
+      "shadow": "#24152B"
+    },
+    "secondary": {
+      "color": "#F3C8C7",
+      "outline": "#24152B"
+    },
+    "panel": {
+      "color": "#24152B",
+      "alpha": 0.88,
+      "border": "#F0A06D",
+      "accent": "#FFD58A"
+    },
+    "chapter": {
+      "show": true,
+      "position": "top",
+      "duration": 2.4
+    }
   },
-  "note": "长镜头示范：主镜 send 是 0–24 秒的一镜，机位全程不动，靠三次可读变化撑住——4.5 秒 HUD 按 delta 下降一次，9.0 秒与 17.2 秒字幕各换一行（0.8 秒的第一行只是建立基线）。判据是可读变化而不是秒数，所以 24 秒不需要切成四个 6 秒的镜头；旧版「一镜 4–8 秒」的写法已作废。24 秒后的 receive 只有 2 秒，是结尾结算牌，只收束结果、不新增读数变化，也不参与长镜头判据。starter --storyboard 直接读取项目、字幕、镜头与转场；scene.id 对应 SCENE_RENDERERS 画法，事件动作由画法实现。",
+  "note": "技术校验分镜：24 秒单镜通过一次 HUD 状态变化和两次字幕变化说明长镜头的可读变化。此 JSON 用于展示 schema 和时间字段，不规定 MV 故事或美术；starter 输出始终是技术检查画面。目标风格流程见 references/pixel-rpg-production-case.md。",
   "device": {
-    "id": "river-message-system",
+    "id": "pixel-render-test",
     "type": "game-system",
-    "name": "隔岸寄送系统",
-    "purpose": "把主动发送、未抵达和灯光回应呈现为可读状态"
-  },
-  "lyricsMeta": {
-    "source": "template-authored",
-    "ref": "assets/storyboard-example.json",
-    "fetchedAt": "2026-11-17T14:45:00+08:00",
-    "proofread": true
+    "name": "像素渲染检查界面",
+    "purpose": "检查色块、时间标记、字幕和画面状态是否随时间正确变化"
   },
   "lyrics": [
     {
       "id": "line-1",
       "start": 0.8,
       "end": 8.6,
-      "text": "送一盏小灯到对岸",
-      "en": "Send a small light across."
+      "text": "色块边界保持清晰",
+      "en": "Keep color edges crisp."
     },
     {
       "id": "line-2",
       "start": 9,
       "end": 16.8,
-      "text": "水流拐弯，我松开手",
-      "en": "The current turns; I let it go."
+      "text": "时间标记沿网格移动",
+      "en": "Move the time marker across the grid."
     },
     {
       "id": "line-3",
       "start": 17.2,
       "end": 23.4,
-      "text": "未能抵达，也有回光",
-      "en": "Still apart, our lights reply."
+      "text": "最终位置停在基准线上",
+      "en": "Stop at the reference line."
     }
   ],
   "music": {
     "status": "illustrative",
     "presentationNotice": true,
     "evidence": {
-      "method": "模板按固定半秒间隔生成原创节奏；字幕与动作时点为演示设计",
-      "limitations": "不对应真实歌曲或演唱；没有人声逐词对齐，也未宣称人工核听真实音乐"
+      "method": "固定半秒间隔用于技术链路检查，字幕与动作时点为示意设计",
+      "limitations": "不对应真实歌曲或演唱，没有逐词同步或人工听音结果"
     },
     "beats": [
       0,
@@ -136,38 +146,38 @@
   },
   "actors": [
     {
-      "id": "p1",
+      "id": "subject-a",
       "costumes": [
-        "coral-coat"
+        "warm-marker"
       ]
     },
     {
-      "id": "p2",
+      "id": "subject-b",
       "costumes": [
-        "teal-coat"
+        "cool-marker"
       ]
     }
   ],
   "props": [
-    "paper-boat",
-    "boat-light",
-    "near-lamp",
-    "far-lamp"
+    "color-bars",
+    "pixel-grid",
+    "time-marker",
+    "reference-line"
   ],
   "chapters": [
     {
-      "id": "send-chapter",
+      "id": "palette-check",
       "start": 0,
       "end": 12,
-      "title": "第一次发送",
-      "meaning": "主动靠近后等待，HUD 读数开始下降"
+      "title": "色块检查",
+      "meaning": "检查色彩边缘和格点显示"
     },
     {
-      "id": "reply-chapter",
+      "id": "motion-check",
       "start": 12,
       "end": 24,
-      "title": "收到回光",
-      "meaning": "未抵达但留下回应"
+      "title": "移动检查",
+      "meaning": "检查时间标记的连续位置变化"
     }
   ],
   "scenes": [
@@ -175,16 +185,16 @@
       "id": "send",
       "start": 0,
       "end": 24,
-      "meaning": "把心意送往远方，主动放手后等待；24 秒里经历一次读数下降和两次字幕换行",
-      "location": "左岸出发，同一条河的两岸；机位全程不动",
-      "objective": "让载灯纸船抵达对岸，并让观众看清未抵达的结果",
-      "action": "p1 推船并松手，载灯纸船沿弯流漂向河心；p2 在右岸亮灯回应",
-      "feedback": "纸船位移、读数下降和远岸灯光说明寄送的进展与失败",
-      "outcome": "纸船到达河心，尚未抵达；两岸人物仍分开，只留下灯光联系",
+      "meaning": "保持单一检查画面，通过色标、移动标记和字幕显示时间变化",
+      "location": "深色像素网格，中央有色条和水平参考线",
+      "objective": "确认网格边缘清晰，标记沿时间轴移动并停在预定位置",
+      "action": "检查画面依次显示色条、水平参考线和移动标记",
+      "feedback": "颜色保持区分，标记位置随时间连续变化",
+      "outcome": "移动标记停在参考位置，画面没有黑边或缩放模糊",
       "materialVariant": {
-        "id": "night-water",
-        "label": "夜水材质",
-        "change": "水面高光随纸船移动，机位保持不变"
+        "id": "grid-lighting",
+        "label": "网格明暗检查",
+        "change": "网格对比度保持稳定，标记经过时不遮盖色块"
       },
       "lyricIds": [
         "line-1",
@@ -193,44 +203,43 @@
       ],
       "actors": [
         {
-          "id": "p1",
-          "costume": "coral-coat"
+          "id": "subject-a",
+          "costume": "warm-marker"
         },
         {
-          "id": "p2",
-          "costume": "teal-coat"
+          "id": "subject-b",
+          "costume": "cool-marker"
         }
       ],
       "props": [
-        "paper-boat",
-        "boat-light",
-        "near-lamp",
-        "far-lamp"
+        "color-bars",
+        "pixel-grid",
+        "time-marker",
+        "reference-line"
       ],
       "events": [
         {
           "at": 4.5,
-          "action": "p1 松手，纸船离开左岸；隔岸好感度按数值下降一次",
+          "action": "时间标记进入色条参考位置，HUD 状态更新一次",
           "lyricIds": [
             "line-1"
           ],
           "hud": {
-            "label": "隔岸好感度",
-            "unit": "%",
-            "value": 42,
-            "delta": -18
+            "label": "渲染状态",
+            "value": 1,
+            "delta": 1
           }
         },
         {
           "at": 9,
-          "action": "字幕换行：纸船经过弯流，继续向河心漂移",
+          "action": "字幕切换，时间标记继续沿网格移动",
           "lyricIds": [
             "line-2"
           ]
         },
         {
           "at": 17.2,
-          "action": "字幕再换一行：p2 点亮岸灯，保持未抵达的事实",
+          "action": "字幕切换，标记移动至参考线终点",
           "lyricIds": [
             "line-3"
           ]
@@ -240,7 +249,7 @@
         "type": "cut",
         "dur": 0
       },
-      "exitTransition": "切到结尾结算牌，主镜本身不靠切镜制造变化"
+      "exitTransition": "检查结束后直接切换，不增加额外检查画面"
     }
   ]
 }

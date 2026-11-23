@@ -41,6 +41,31 @@ test('最近拍点平距选早拍，负数代表提前', () => {
   assert.equal(report.sceneStarts[1].deltaSeconds, 0.5);
 });
 
+test('为镜头切点和明确的踩拍事件给出带证据的建议但不修改分镜', () => {
+  const { storyboard, analysis } = fixture();
+  storyboard.scenes[1].events = [
+    { at: 2.9, action: '动作峰值', sync: 'beat' },
+    { at: 2.7, action: '自由叙事动作', sync: 'none' },
+  ];
+  analysis.beatDetails = analysis.beats.map((at, index) => ({
+    at, confidence: index === 3 ? 0.32 : 0.9,
+    evidence: index === 3 ? 'predicted' : 'observed',
+  }));
+  const before = JSON.stringify(storyboard);
+  const report = buildSyncReport(storyboard, analysis);
+  assert.equal(report.alignmentSuggestions.length, 2);
+  const cut = report.alignmentSuggestions.find(item => item.kind === 'scene-cut');
+  assert.equal(cut.targetAt, 2.1);
+  assert.equal(cut.suggestedAt, 2);
+  assert.equal(cut.deltaMs, 100);
+  assert.equal(cut.evidence, 'observed');
+  const action = report.alignmentSuggestions.find(item => item.kind === 'event');
+  assert.equal(action.cueId, 'second:event-1');
+  assert.equal(action.status, 'low-confidence');
+  assert.equal(action.suggestedAt, null);
+  assert.equal(JSON.stringify(storyboard), before);
+});
+
 test('无候选节拍仍能画能量与字幕，误差为空', () => {
   const { storyboard, analysis } = fixture();
   analysis.beats = [];

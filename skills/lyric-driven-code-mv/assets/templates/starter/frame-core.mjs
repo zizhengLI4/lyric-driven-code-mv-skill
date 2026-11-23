@@ -4,7 +4,7 @@
 
 export const WIDTH = 384;
 export const HEIGHT = 216;
-export const DEFAULT_SEED = 'paper-boat-original-v1';
+export const DEFAULT_SEED = 'pixel-render-check-v1';
 
 export const CAMERA_LIMITS = Object.freeze({ minX: 120, maxX: 264, minY: 70, maxY: 146, minZoom: 0.75, maxZoom: 1.25 });
 export const TRANSITION_TYPES = Object.freeze(['dissolve', 'ripple', 'water', 'rain', 'cut']);

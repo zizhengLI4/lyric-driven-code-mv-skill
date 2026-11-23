@@ -204,7 +204,7 @@ test('JSON改变实际边界、转场、字幕与项目时长，拒绝CLI冲突�
   assert.equal(frame.resolveTimeline(99, c.timeline).local, 2.5);
   const ass = exporter.createASS(c);
   assert.match(ass, /新的分镜字幕/); assert.match(ass, /A new cue/);
-  assert.doesNotMatch(ass, /送一盏小灯到对岸/);
+  assert.doesNotMatch(ass, /我把迟来的邀请写好/);
   const hash = f => createHash('sha256').update(f.data).digest('hex');
   assert.notEqual(hash(frame.renderFrame(2, { timeline: c.timeline })), hash(frame.renderFrame(2)));
   await assert.rejects(() => exporter.loadProject(exporter.parseArgs(['--storyboard', path, '--fps', '30'])), /冲突/);
@@ -238,6 +238,68 @@ test('像素歌词面板样式贯穿时间线和ASS，并保留章节牌', async
   assert.match(ass, /Style: LyricPanel,[^\n]*&H00D6F1FF/);
   assert.match(ass, /圣诞星/);
   assert.match(ass, /\\fs\d+/);
+});
+
+test('词级字幕在ASS中按真实词界着色并保留稳定整句', async t => {
+  const data = fixture();
+  data.lyrics = [{
+    id: 'word-timed-line',
+    start: 0.2,
+    end: 1.2,
+    text: 'original lyrics',
+    zh: '你好 世界',
+    en: 'original lyrics',
+    words: [
+      { text: '你好 ', start: 0.4, end: 0.65 },
+      { text: '世界', start: 0.9, end: 1.1 },
+    ],
+  }];
+  const { path } = await setup(t, data);
+  const exporter = await import(new URL('export.mjs', base));
+  const c = await exporter.loadProject(exporter.parseArgs(['--storyboard', path]));
+
+  assert.deepEqual(c.timeline.captions[0].words, data.lyrics[0].words);
+  const dialogue = exporter.createASS(c).split('\n').filter(line => line.startsWith('Dialogue: 0,'));
+  assert.equal(dialogue.length, 5);
+  assert.match(dialogue[0], /^Dialogue: 0,0:00:00\.20,0:00:00\.40,/);
+  assert.match(dialogue[1], /^Dialogue: 0,0:00:00\.40,0:00:00\.65,/);
+  assert.match(dialogue[2], /^Dialogue: 0,0:00:00\.65,0:00:00\.90,/);
+  assert.match(dialogue[3], /^Dialogue: 0,0:00:00\.90,0:00:01\.10,/);
+  assert.match(dialogue[4], /^Dialogue: 0,0:00:01\.10,0:00:01\.20,/);
+
+  for (const line of dialogue) {
+    assert.match(line, /\\pos\(384,402\)/);
+    assert.match(line, /\\c&H[0-9A-F]{8}&}你好 /);
+    assert.match(line, /\\c&H[0-9A-F]{8}&}世界/);
+  }
+  assert.match(dialogue[0], /\\c&H00C4DEE5&/); // upcoming
+  assert.match(dialogue[1], /\\c&H008AD5FF&/); // active
+  assert.match(dialogue[2], /\\c&H00EDF5F4&/); // played
+  assert.match(dialogue[2], /\\c&H00C4DEE5&/); // gap leaves the next word upcoming
+  assert.match(dialogue[3], /\\c&H008AD5FF&/);
+  assert.match(dialogue[4], /\\c&H00EDF5F4&/);
+  assert.match(dialogue[0], /original lyrics/);
+});
+
+test('ASS 词级导出拒绝百分秒量化后的零长和词序重叠', async t => {
+  const exporter = await import(new URL('export.mjs', base));
+  const data = fixture();
+  data.lyrics = [{
+    id: 'word-timed-line', start: 0.2, end: 1.2, text: 'one two',
+    words: [
+      { text: 'one ', start: 0.4, end: 0.404 },
+      { text: 'two', start: 0.9, end: 1.1 },
+    ],
+  }];
+  const { path } = await setup(t, data);
+  const c = await exporter.loadProject(exporter.parseArgs(['--storyboard', path]));
+  assert.throws(() => exporter.createASS(c), /百分秒|零长|量化/);
+
+  c.timeline.captions[0].words = [
+    { text: 'one ', start: 0.4, end: 0.8 },
+    { text: 'two', start: 0.7, end: 1.1 },
+  ];
+  assert.throws(() => exporter.createASS(c), /词序|重叠|words/);
 });
 
 test('像素歌词面板配置拒绝未知模式和无效颜色', async t => {

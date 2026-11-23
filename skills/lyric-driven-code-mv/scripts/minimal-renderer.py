@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""minimal-renderer.py —— 让分镜真正变成画面的最小渲染器。
+"""minimal-renderer.py —— 为分镜提供中性的布局与导出检查画面。
+
+它绘制色块、网格和时间标记，用于检查版式、HUD、字幕和媒体编码。
+这里没有项目场景或角色画法，不应作为 MV 样片或美术方向参考。
 
 用法：
   python minimal-renderer.py storyboard.json --probe 0 120 240   # 抽 3 帧 PNG，秒级
@@ -15,9 +18,7 @@
 """
 import argparse
 import json
-import math
 import os
-import random
 import shutil
 import subprocess
 from path_safety import assert_no_path_aliases
@@ -26,33 +27,13 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-# ------------------------------------------------------------------ 调色板
-SKY_TOP = (10, 16, 42)
-SKY_LOW = (52, 74, 118)
-WATER_D = (26, 42, 74)
-WATER_L = (58, 88, 138)
-ICE = (196, 226, 244)
-SNOW = (226, 236, 250)
-BOAT = (232, 224, 208)
-P1_COAT = (86, 124, 196)
-P2_COAT = (214, 116, 104)
-LAMP = (255, 206, 118)
+# ------------------------------------------------------------------ 技术检查色板
+SKY_TOP = (28, 35, 48)
+SKY_LOW = (48, 56, 72)
+SNOW = (226, 230, 236)
 HUD_OK = (128, 232, 164)
 HUD_BAD = (238, 116, 116)
 TEXT = (236, 244, 255)
-
-_rng = random.Random("paper-boat-01")  # 固定种子：同一条命令永远同一片星空
-STARS = []
-RIPPLES = []
-
-
-def seed_assets(seed):
-    """用分镜里的 project.seed 重新生成粒子初值，换 seed 就换一片星空。"""
-    global STARS, RIPPLES
-    rng = random.Random(seed)
-    STARS = [(rng.random(), rng.random(), rng.random() * 6.28) for _ in range(90)]
-    RIPPLES = [(rng.random(), rng.random(), rng.random() * 6.28) for _ in range(60)]
-
 
 def clamp01(x):
     return 0.0 if x < 0 else (1.0 if x > 1 else x)
@@ -94,137 +75,66 @@ def font(size):
     raise SystemExit("找不到中文字体，请在 FONT_CANDIDATES 里加一条本机字体路径。")
 
 
-# ------------------------------------------------------------------ 画世界
-def draw_sky(img, W, H, t):
-    d = ImageDraw.Draw(img)
-    horizon = int(H * 0.56)
-    for y in range(horizon):
-        d.line([(0, y), (W, y)], fill=mix(SKY_TOP, SKY_LOW, y / horizon))
-    for (x, y, ph) in STARS:
-        if y * horizon > horizon - 2:
-            continue
-        a = 0.5 + 0.5 * math.sin(t * 1.8 + ph)
-        xi, yi = int(x * W), int(y * horizon)
-        d.point((xi, yi), fill=mix((30, 42, 70), SNOW, a))
+# ------------------------------------------------------------------ 技术检查画面
+COLOR_BARS = [
+    (226, 90, 72), (241, 173, 67), (230, 215, 102), (105, 176, 121),
+    (82, 157, 194), (113, 122, 196), (172, 112, 174), (220, 219, 203),
+]
 
 
-def draw_water(img, W, H, t):
-    d = ImageDraw.Draw(img)
-    horizon = int(H * 0.56)
-    d.rectangle([0, horizon, W, H], fill=WATER_D)
-    for (rx, ry, ph) in RIPPLES:
-        y = horizon + 4 + int(ry * (H - horizon - 8))
-        x0 = int((rx * W + math.sin(t * 1.6 + ph) * 6 + t * 6) % W)
-        d.line([(x0, y), (x0 + 6, y)], fill=WATER_L)
-
-
-def draw_boat(img, W, H, x, y, tilt=0.0):
-    d = ImageDraw.Draw(img)
-    x, y = int(x), int(y)
-    d.polygon([(x - 6, y), (x + 6, y), (x + 4, y + 3), (x - 4, y + 3)], fill=BOAT)
-    d.polygon([(x, y - 8), (x + 5, y - 1), (x - 1, y - 1)], fill=(246, 242, 232))
-    if abs(tilt) > 0.01:
-        d.line([(x - 2, y + 3), (x + 2, y + 3)], fill=(180, 200, 226))
-
-
-def draw_actor(img, x, y, coat, facing=1, scale=1.0, arm=0.0):
-    d = ImageDraw.Draw(img)
-    x, y, s = int(round(x)), int(round(y)), scale
-    d.ellipse([x - 5 * s, y - 1, x + 5 * s, y + 1], fill=(18, 28, 50))
-    d.rectangle([x - 2.4 * s, y - 5 * s, x - 0.4 * s, y], fill=(30, 34, 50))
-    d.rectangle([x + 0.4 * s, y - 5 * s, x + 2.4 * s, y], fill=(30, 34, 50))
-    d.rectangle([x - 3 * s, y - 13 * s, x + 3 * s, y - 5 * s], fill=coat)
-    d.ellipse([x - 2.2 * s, y - 18 * s, x + 2.2 * s, y - 13 * s], fill=(238, 198, 168))
-    d.rectangle([x - 2.4 * s, y - 18.6 * s, x + 2.4 * s, y - 16.6 * s], fill=(46, 40, 58))
-    if arm > 0.05:
-        d.rectangle([x + 2.4 * s, y - 13 * s - 7 * s * arm, x + 4 * s, y - 8 * s], fill=coat)
-
-
-def draw_ice_barrier(img, W, H, x):
-    d = ImageDraw.Draw(img)
-    horizon = int(H * 0.56)
-    x = int(x)
-    d.polygon([(x - 5, horizon + 2), (x + 6, horizon - 1), (x + 11, horizon + 8),
-               (x + 9, H - 2), (x - 2, H)], fill=ICE)
-    d.polygon([(x + 6, horizon - 1), (x + 11, horizon + 8), (x + 9, H - 2), (x + 4, H - 3)],
-              fill=(152, 188, 218))
-    d.polygon([(x - 5, horizon + 2), (x - 1, horizon - 6), (x + 3, horizon), (x + 6, horizon - 1)],
-              fill=(238, 248, 255))
-    d.line([(x + 1, horizon + 8), (x + 2, H - 6)], fill=(210, 232, 250))
-
-
-# ------------------------------------------------------------------ 两个场景
-def scene_near_bank(t, sc, sbc, W, H):
-    """放纸船 → 漂向冰障 → 撞上 → 停住。"""
+# ------------------------------------------------------------------ 两个技术检查场景
+def scene_palette_check(t, sc, sbc, W, H):
+    """色卡和整数网格用于检查清晰度、色彩边界和文字版式。"""
     img = Image.new("RGB", (W, H), SKY_TOP)
-    draw_sky(img, W, H, t)
-    draw_water(img, W, H, t)
+    d = ImageDraw.Draw(img)
+    for x in range(0, W, 8):
+        d.line((x, 0, x, H), fill=SKY_LOW, width=1)
+    for y in range(0, H, 8):
+        d.line((0, y, W, y), fill=SKY_LOW, width=1)
 
-    ice_x = W * 0.78
-    draw_ice_barrier(img, W, H, ice_x)
+    bar_width = max(4, W // (len(COLOR_BARS) + 4))
+    gap = max(1, bar_width // 6)
+    left = (W - (len(COLOR_BARS) * bar_width + (len(COLOR_BARS) - 1) * gap)) // 2
+    top, bottom = int(H * 0.24), int(H * 0.62)
+    for index, color in enumerate(COLOR_BARS):
+        x = left + index * (bar_width + gap)
+        d.rectangle((x, top, x + bar_width - 1, bottom), fill=color)
 
-    launch = sc["start"] + 1.0
-    hit = sc["start"] + 3.5
-    p = ramp(t, launch, hit - 0.4)
-    boat_x = W * 0.22 + (ice_x - W * 0.22 - 8) * p
-    bob = math.sin(t * 3.2) * 1.5
-    draw_boat(img, W, H, boat_x, H * 0.78 + bob)
-    if t >= hit:  # 撞上以后停住，并出现一圈涟漪：这就是"未抵达"的可见证据
-        k = clamp01((t - hit) / 1.2)
-        d = ImageDraw.Draw(img, "RGBA")
-        r = 4 + 14 * k
-        d.ellipse([boat_x - r, H * 0.78 - r * 0.4, boat_x + r, H * 0.78 + r * 0.4],
-                  outline=(200, 220, 240, int(160 * (1 - k))), width=1)
-
-    draw_actor(img, W * 0.14, H * 0.80, P1_COAT, facing=1, scale=1.6)
+    marker_start, marker_end = int(W * 0.12), int(W * 0.88)
+    progress = ramp(t, sc["start"], sc["end"])
+    marker_x = int(marker_start + (marker_end - marker_start) * progress)
+    marker_y = int(H * 0.79)
+    marker_size = max(2, W // 96)
+    d.rectangle((marker_start, marker_y, marker_end, marker_y), fill=SNOW)
+    d.rectangle((marker_x - marker_size, marker_y - marker_size,
+                 marker_x + marker_size, marker_y + marker_size), fill=HUD_OK)
     return img
 
 
-def scene_far_bank(t, sc, sbc, W, H):
-    """远岸：另一个人走来、看见灯、灯亮起。"""
-    img = Image.new("RGB", (W, H), SKY_TOP)
-    draw_sky(img, W, H, t)
-    draw_water(img, W, H, t)
-
-    walk = ramp(t, sc["start"], sc["start"] + 1.6)
-    px = W * 0.80 - W * 0.22 * walk
-    draw_actor(img, px, H * 0.80, P2_COAT, facing=-1, scale=1.6, arm=walk)
-
-    lit = ramp(t, sc["start"] + 3.5, sc["start"] + 4.2)
-    if lit > 0.02:  # 远处那盏灯：用几层同心圆叠出光晕，不要用高斯模糊
-        d = ImageDraw.Draw(img, "RGBA")
-        cx, cy = W * 0.20, H * 0.66
-        for i in range(6, 0, -1):
-            r = 3 + i * 2.4 * lit
-            d.ellipse([cx - r, cy - r, cx + r, cy + r],
-                      fill=(LAMP[0], LAMP[1], LAMP[2], int(48 * lit * (1 - i / 7))))
-        d.rectangle([cx - 1, cy - 1, cx + 1, cy + 1], fill=(255, 244, 216))
-        draw_actor(img, W * 0.13, H * 0.80, P1_COAT, facing=1, scale=1.6, arm=1.0)
-
-    if t >= sc["start"] + 3.8:  # 望远镜圆窗：圆外压暗、圆内保留，才读得出"在看"
-        k = ramp(t, sc["start"] + 3.8, sc["start"] + 4.6)
-        if k > 0.02:
-            cx, cy, r = W * 0.26, H * 0.44, W * 0.16 * k
-            box = [cx - r, cy - r, cx + r, cy + r]
-            hole = Image.new("L", (W, H), 0)
-            ImageDraw.Draw(hole).ellipse(box, fill=255)
-            veil = Image.new("RGBA", (W, H), (6, 10, 22, 255))
-            veil.putalpha(hole.point(lambda v: int(150 * k * (1 - v / 255))))
-            canvas = img.convert("RGBA")
-            canvas.alpha_composite(veil)
-            ImageDraw.Draw(canvas, "RGBA").ellipse(box, outline=(226, 238, 252, 210), width=3)
-            img = canvas.convert("RGB")
+def scene_time_check(t, sc, sbc, W, H):
+    """第二色相与反向移动位置用于检查镜头边界和转场。"""
+    img = scene_palette_check(t, sc, sbc, W, H)
+    overlay = Image.new("RGB", (W, H), (26, 29, 43))
+    img = Image.blend(img, overlay, 0.3)
+    d = ImageDraw.Draw(img)
+    marker_start, marker_end = int(W * 0.88), int(W * 0.12)
+    progress = ramp(t, sc["start"], sc["end"])
+    marker_x = int(marker_start + (marker_end - marker_start) * progress)
+    marker_y = int(H * 0.79)
+    marker_size = max(2, W // 96)
+    d.rectangle((marker_x - marker_size, marker_y - marker_size,
+                 marker_x + marker_size, marker_y + marker_size), fill=(145, 212, 240))
     return img
 
 
 SCENES = {
-    "send-and-stop": scene_near_bank,
-    "other-bank-sees-light": scene_far_bank,
-    # 示例分镜使用的一对 id，见 assets/storyboard-example.json
-    "send": scene_near_bank,
-    "receive": scene_far_bank,
+    # 兼容现有示例 JSON 的 scene.id。画面仍是技术检查卡，不承载故事。
+    "send": scene_palette_check,
+    "receive": scene_time_check,
+    "palette-check": scene_palette_check,
+    "time-check": scene_time_check,
 }
-DEFAULT_SCENE = scene_near_bank
+DEFAULT_SCENE = scene_palette_check
 
 
 def scene_at(t, sbc):
@@ -444,7 +354,6 @@ def load(path):
     sbc["_W"] = p["virtualWidth"]
     sbc["_H"] = p["virtualHeight"]
     sbc["_SCALE"] = p["width"] // p["virtualWidth"]
-    seed_assets(p.get("seed") or "default-seed")
     return sbc
 
 

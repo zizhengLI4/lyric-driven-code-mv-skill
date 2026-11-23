@@ -158,7 +158,7 @@ test('unknown props report the complete allowed-value list alongside all validat
   data.scenes[0].meaning = '';
   const { errors } = analyzeStoryboard(data);
   assert.equal(errors.length, 3);
-  assert.match(errors.join('\n'), /空椅.*候选|候选.*paper-boat/);
+  assert.match(errors.join('\n'), /空椅.*候选|候选.*invitation-note/);
   assert.match(errors.join('\n'), /未知道具/);
   assert.match(errors.join('\n'), /meaning/);
 });

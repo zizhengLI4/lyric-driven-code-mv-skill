@@ -7,6 +7,9 @@ import { assertNoPathAliases } from './path-safety.mjs';
 
 const MAX_SECONDS = 600;
 const ABSOLUTE_RMS_FLOOR = 1e-5;
+const TEMPO_WINDOW_SECONDS = 8;
+const TEMPO_WINDOW_STEP_SECONDS = 4;
+const MIN_WINDOW_CONFIDENCE = 0.45;
 const round = value => Math.round(value * 1e6) / 1e6;
 const clamp01 = value => Math.max(0, Math.min(1, value));
 // 网格拟合只看打击乐硬证据：按 strength 取前 40%，弱起音会把任何网格都拉平。
@@ -276,6 +279,234 @@ function estimateTempo(onsets, novelty, hopSeconds, duration, peakRms, options) 
   return selected(best, publicCandidates, publicClusters, strong ? confidence : Math.min(0.59, confidence), strong ? 'estimated' : 'low-confidence', strong ? '邻近候选的周期与相位共同支持网格；仍需人工核对半速/双速。' : '强起音网格拟合与间隔投票共同支持该候选，但相位或自相关偏弱；网格仅供 draft 分镜试排与人工复核。');
 }
 
+function analyzeTempoWindows(onsets, novelty, envelope, hopSeconds, duration, options) {
+  const windows = [];
+  for (let start = 0; start < duration; start += TEMPO_WINDOW_STEP_SECONDS) {
+    const end = Math.min(duration, start + TEMPO_WINDOW_SECONDS);
+    if (end - start < 3) continue;
+    const localOnsets = onsets
+      .filter(onset => onset.at >= start && onset.at < end)
+      .map(onset => ({ ...onset, at: onset.at - start }));
+    const firstIndex = Math.floor(start / hopSeconds);
+    const lastIndex = Math.min(novelty.length, Math.ceil(end / hopSeconds));
+    const localNovelty = novelty.slice(firstIndex, lastIndex);
+    const localEnvelope = envelope.filter(frame => frame.at >= start && frame.at < end);
+    const localPeakRms = localEnvelope.reduce((peak, frame) => Math.max(peak, frame.rms), 0);
+    // A supplied BPM is a whole-clip reference. Local estimates must remain
+    // audio-derived so tempo changes can override that reference where needed.
+    const windowOptions = options.bpm === undefined
+      ? options
+      : { ...options, bpm: undefined, bpmSource: undefined, bpmEvidence: undefined };
+    const result = estimateTempo(localOnsets, localNovelty, hopSeconds, end - start, localPeakRms, windowOptions);
+    const periodSeconds = result.bpm === null ? null : 60 / result.bpm;
+    const phaseSeconds = periodSeconds === null
+      ? null
+      : round((((start + result.phaseSeconds) % periodSeconds) + periodSeconds) % periodSeconds);
+    const supportedOnsets = onsets.filter(onset => onset.at >= start && onset.at < end);
+    const support = periodSeconds === null || supportedOnsets.length === 0
+      ? null
+      : {
+        start: round(Math.max(start, supportedOnsets[0].at - periodSeconds / 2)),
+        end: round(Math.min(end, supportedOnsets.at(-1).at + periodSeconds / 2)),
+      };
+    windows.push({
+      start: round(start), end: round(end), bpm: result.bpm,
+      phaseSeconds, periodSeconds: periodSeconds === null ? null : round(periodSeconds),
+      confidence: result.confidence, status: result.status,
+      evidenceCount: supportedOnsets.length, onsetFit: result.onsetFit,
+      support, reason: result.reason,
+    });
+  }
+  return windows;
+}
+
+function localTempoClusters(windows) {
+  const clusters = [];
+  for (const window of windows) {
+    if (window.bpm === null || window.confidence < 0.5) continue;
+    const cluster = clusters.find(candidate => Math.abs(window.bpm - candidate.anchorBpm) / candidate.anchorBpm <= 0.05);
+    if (cluster) cluster.windows.push(window);
+    else clusters.push({ anchorBpm: window.bpm, windows: [window] });
+  }
+  return clusters;
+}
+
+function summarizeTempoWindows(tempo, windows, options) {
+  const clusters = localTempoClusters(windows);
+  const supportedClusters = clusters.filter(cluster => cluster.windows.length >= 2);
+  if (options.bpm === undefined && supportedClusters.length > 1) {
+    return {
+      ...tempo,
+      bpm: null,
+      status: 'variable-tempo',
+      periodSeconds: null,
+      phaseSeconds: null,
+      globalCandidate: { bpm: tempo.bpm, phaseSeconds: tempo.phaseSeconds, status: tempo.status },
+      reason: '局部窗口支持多个速度范围；不再用单一全局 BPM 外推整段拍点。',
+      windows,
+    };
+  }
+  const compatibleProvidedSpeeds = options.bpm === undefined
+    ? []
+    : [options.bpm / 2, options.bpm, options.bpm * 2];
+  if (options.bpm !== undefined && supportedClusters.some(cluster =>
+    !compatibleProvidedSpeeds.some(speed => Math.abs(cluster.anchorBpm - speed) / speed <= 0.05))) {
+    return { ...tempo, status: 'local-variation', reason: '局部窗口显示速度与所提供 BPM 有差异；请按段落复核。', windows };
+  }
+  return { ...tempo, windows };
+}
+
+function onsetGroups(onsets, periodSeconds) {
+  const maximumGap = Math.max(1.25, periodSeconds * 2.5);
+  const groups = [];
+  for (const onset of onsets) {
+    const current = groups.at(-1);
+    if (!current || onset.at - current.at(-1).at > maximumGap) groups.push([onset]);
+    else current.push(onset);
+  }
+  return groups.filter(group => group.length >= 4);
+}
+
+function gridCandidatesForSupport({ start, end, phaseSeconds, periodSeconds, bpm, confidence, onsets }) {
+  const firstIndex = Math.ceil((start - phaseSeconds) / periodSeconds - 1e-8);
+  const lastIndex = Math.floor((end - phaseSeconds) / periodSeconds + 1e-8);
+  const candidates = [];
+  for (let index = firstIndex; index <= lastIndex; index++) {
+    const at = round(phaseSeconds + index * periodSeconds);
+    if (at < 0 || at >= end) continue;
+    const tolerance = Math.min(0.08, periodSeconds * 0.15);
+    let nearest = null;
+    for (const onset of onsets) {
+      const distance = Math.abs(onset.at - at);
+      if (distance <= tolerance && (!nearest || distance < nearest.distance)) nearest = { onset, distance };
+    }
+    candidates.push({
+      at,
+      bpm,
+      confidence: round(Math.min(1, confidence * 0.75 + (nearest ? nearest.onset.strength * 0.25 : 0))),
+      evidence: nearest ? 'observed' : 'predicted',
+    });
+  }
+  return candidates;
+}
+
+function buildBeatDetails(tempo, windows, onsets, duration) {
+  const candidates = [];
+  const globalPeriod = tempo.bpm === null ? null : 60 / tempo.bpm;
+  const hasLocalTempoChange = tempo.status === 'variable-tempo' || tempo.status === 'local-variation';
+  const stableGlobalGrid = tempo.bpm !== null && !hasLocalTempoChange && tempo.confidence >= MIN_WINDOW_CONFIDENCE;
+  if (stableGlobalGrid && tempo.phaseSeconds !== null) {
+    for (const group of onsetGroups(onsets, globalPeriod)) {
+      const start = Math.max(0, group[0].at - globalPeriod / 2);
+      const end = Math.min(duration, group.at(-1).at + globalPeriod / 2);
+      candidates.push(...gridCandidatesForSupport({
+        start, end, phaseSeconds: tempo.phaseSeconds, periodSeconds: globalPeriod,
+        bpm: tempo.bpm, confidence: tempo.confidence, onsets: group,
+      }));
+    }
+  } else if (hasLocalTempoChange) {
+    for (const window of windows) {
+      const periodSeconds = window.periodSeconds;
+      if (window.bpm === null || window.confidence < MIN_WINDOW_CONFIDENCE || !hasStrongFit(window) || periodSeconds === null || window.phaseSeconds === null) continue;
+      const localOnsets = onsets.filter(onset => onset.at >= window.start && onset.at < window.end);
+      for (const group of onsetGroups(localOnsets, periodSeconds)) {
+        const start = Math.max(window.start, group[0].at - periodSeconds / 2);
+        const end = Math.min(window.end, group.at(-1).at + periodSeconds / 2);
+        candidates.push(...gridCandidatesForSupport({
+          start, end, phaseSeconds: window.phaseSeconds, periodSeconds,
+          bpm: window.bpm, confidence: window.confidence, onsets: group,
+        }));
+      }
+    }
+  }
+  candidates.sort((a, b) => a.at - b.at || b.confidence - a.confidence);
+  const merged = [];
+  for (const candidate of candidates) {
+    const previous = merged.at(-1);
+    const mergeTolerance = previous ? Math.min(0.1, 0.18 * Math.min(60 / previous.bpm, 60 / candidate.bpm)) : 0;
+    if (!previous || candidate.at - previous.at > mergeTolerance) {
+      merged.push(candidate);
+      continue;
+    }
+    if (candidate.confidence > previous.confidence) {
+      merged[merged.length - 1] = { ...candidate, evidence: previous.evidence === 'observed' || candidate.evidence === 'observed' ? 'observed' : 'predicted' };
+    } else if (candidate.evidence === 'observed') previous.evidence = 'observed';
+  }
+  return merged.map(({ windowStart, ...beat }) => beat);
+}
+
+function bandEnvelopes(samples, sampleRate, windowSamples, hopSamples) {
+  const lowCutoff = 150, midCutoff = Math.min(1200, sampleRate * 0.35);
+  const lowAlpha = Math.exp(-2 * Math.PI * lowCutoff / sampleRate);
+  const midAlpha = Math.exp(-2 * Math.PI * midCutoff / sampleRate);
+  const rings = [new Float64Array(windowSamples), new Float64Array(windowSamples), new Float64Array(windowSamples)];
+  const powers = [0, 0, 0], previousFilters = [0, 0];
+  const bands = { low: [], mid: [], high: [] }, names = ['low', 'mid', 'high'];
+  let ringIndex = 0;
+  for (let index = 0; index < samples.length; index++) {
+    const sample = samples[index];
+    const lowpass = (1 - lowAlpha) * sample + lowAlpha * previousFilters[0];
+    const midpass = (1 - midAlpha) * sample + midAlpha * previousFilters[1];
+    previousFilters[0] = lowpass; previousFilters[1] = midpass;
+    const values = [lowpass, midpass - lowpass, sample - midpass];
+    for (let band = 0; band < values.length; band++) {
+      const old = rings[band][ringIndex];
+      rings[band][ringIndex] = values[band];
+      powers[band] += values[band] * values[band] - old * old;
+    }
+    ringIndex = (ringIndex + 1) % windowSamples;
+    if (index + 1 >= windowSamples && (index + 1 - windowSamples) % hopSamples === 0) {
+      const at = (index + 1 - windowSamples) / sampleRate;
+      for (let band = 0; band < names.length; band++) bands[names[band]].push({ at, rms: Math.sqrt(Math.max(0, powers[band]) / windowSamples) });
+    }
+  }
+  const nextStart = bands.low.length * hopSamples;
+  for (let start = nextStart; start < samples.length; start += hopSamples) {
+    const count = samples.length - start;
+    const first = (ringIndex - count + windowSamples) % windowSamples;
+    const partialPowers = [0, 0, 0];
+    for (let offset = 0; offset < count; offset++) {
+      const ring = (first + offset) % windowSamples;
+      for (let band = 0; band < names.length; band++) partialPowers[band] += rings[band][ring] * rings[band][ring];
+    }
+    for (let band = 0; band < names.length; band++) bands[names[band]].push({ at: start / sampleRate, rms: Math.sqrt(partialPowers[band] / count) });
+  }
+  return { bands, lowCutoff, midCutoff };
+}
+
+function onsetCandidates(frames, peakRms, windowSeconds, band, duration, sampleRate, bandStrengthScale = peakRms) {
+  if (peakRms <= ABSOLUTE_RMS_FLOOR) return [];
+  const novelty = frames.map((frame, index) => Math.max(0, frame.rms - (frames[index - 1]?.rms ?? 0)));
+  const threshold = Math.max(ABSOLUTE_RMS_FLOOR, peakRms * 0.1);
+  const onsets = [];
+  for (let index = 0; index < novelty.length; index++) {
+    if (novelty[index] < threshold || novelty[index] < (novelty[index - 1] ?? 0) || novelty[index] <= (novelty[index + 1] ?? 0)) continue;
+    const at = Math.min(frames[index].at + windowSeconds / 2, duration - 1 / sampleRate);
+    const candidate = { at: round(at), strength: round(novelty[index] / peakRms), source: band, bandStrength: { low: 0, mid: 0, high: 0 } };
+    candidate.bandStrength[band] = round(novelty[index] / bandStrengthScale);
+    const last = onsets.at(-1);
+    if (last && candidate.at - last.at < 0.08) {
+      if (candidate.strength > last.strength) onsets[onsets.length - 1] = candidate;
+    } else onsets.push(candidate);
+  }
+  return onsets;
+}
+
+function mergeOnsetCandidates(candidates) {
+  const sorted = candidates.sort((a, b) => a.at - b.at || b.strength - a.strength), merged = [];
+  for (const candidate of sorted) {
+    const previous = merged.at(-1);
+    if (!previous || candidate.at - previous.at >= 0.08) {
+      merged.push({ ...candidate, bandStrength: { ...candidate.bandStrength } });
+      continue;
+    }
+    if (candidate.strength > previous.strength) { previous.at = candidate.at; previous.strength = candidate.strength; }
+    previous.source = previous.source === candidate.source ? previous.source : 'combined';
+    for (const band of ['low', 'mid', 'high']) previous.bandStrength[band] = Math.max(previous.bandStrength[band], candidate.bandStrength[band]);
+  }
+  return merged;
+}
+
 /** Analyze already-cut mono PCM. sourceOffset is metadata; every returned time uses the clip clock. */
 export function analyzePcm(samples, options = {}) {
   const { sampleRate = 8000, sourceOffset = 0, windowSeconds = 0.02, hopSeconds = 0.01 } = options;
@@ -310,18 +541,15 @@ export function analyzePcm(samples, options = {}) {
     peakRms = Math.max(peakRms, rms);
     envelope.push({ at: start / sampleRate, rms });
   }
-  const novelty = envelope.map((frame, index) => Math.max(0, frame.rms - (index ? envelope[index - 1].rms : 0)));
-  const onsets = [];
-  const onsetThreshold = Math.max(ABSOLUTE_RMS_FLOOR, peakRms * 0.1);
-  for (let i = 0; i < novelty.length; i++) {
-    if (novelty[i] < onsetThreshold || novelty[i] < (novelty[i - 1] ?? 0) || novelty[i] <= (novelty[i + 1] ?? 0)) continue;
-    const at = Math.min(envelope[i].at + actualWindow / 2, duration - 1 / sampleRate);
-    const candidate = { at: round(at), strength: round(novelty[i] / peakRms) };
-    const last = onsets.at(-1);
-    if (last && candidate.at - last.at < 0.08) {
-      if (candidate.strength > last.strength) onsets[onsets.length - 1] = candidate;
-    } else onsets.push(candidate);
-  }
+  const filtered = bandEnvelopes(samples, sampleRate, windowSamples, hopSamples);
+  const bandRises = Object.fromEntries(Object.entries(filtered.bands).map(([name, frames]) => [name, frames.map((frame, index) => Math.max(0, frame.rms - (frames[index - 1]?.rms ?? 0)))]));
+  const bandMaxima = Object.fromEntries(Object.entries(bandRises).map(([name, rises]) => [name, rises.reduce((peak, rise) => Math.max(peak, rise), 0)]));
+  const bandStrengthScale = Math.max(ABSOLUTE_RMS_FLOOR, ...Object.values(bandMaxima));
+  const bandWeights = { low: 0.45, mid: 0.35, high: 0.2 };
+  const novelty = envelope.map((frame, index) => Object.entries(bandRises).reduce((sum, [name, rises]) => sum + bandWeights[name] * (bandMaxima[name] ? rises[index] / bandMaxima[name] : 0), 0));
+  const bandOnsets = Object.entries(filtered.bands).flatMap(([name, frames]) => onsetCandidates(frames, bandMaxima[name], actualWindow, name, duration, sampleRate, bandStrengthScale));
+  const broadband = onsetCandidates(envelope, peakRms, actualWindow, 'rms', duration, sampleRate);
+  const onsets = mergeOnsetCandidates([...broadband, ...bandOnsets]);
 
   const pauses = [];
   const pauseThreshold = Math.max(ABSOLUTE_RMS_FLOOR, peakRms * 0.1);
@@ -339,15 +567,11 @@ export function analyzePcm(samples, options = {}) {
       pauseMaxRms = 0;
     }
   }
-  const tempo = estimateTempo(onsets, novelty, actualHop, duration, peakRms, options);
-  const beats = [];
-  if (tempo.bpm !== null) {
-    for (let n = 0; ; n++) {
-      const at = round(tempo.phaseSeconds + n * tempo.periodSeconds);
-      if (at >= duration) break;
-      beats.push(at);
-    }
-  }
+  const globalTempo = estimateTempo(onsets, novelty, actualHop, duration, peakRms, options);
+  const windows = analyzeTempoWindows(onsets, novelty, envelope, actualHop, duration, options);
+  const tempo = summarizeTempoWindows(globalTempo, windows, options);
+  const beatDetails = buildBeatDetails(tempo, windows, onsets, duration);
+  const beats = beatDetails.map(beat => beat.at);
   return {
     schemaVersion: 1,
     status: 'draft',
@@ -364,14 +588,17 @@ export function analyzePcm(samples, options = {}) {
     },
     pauses,
     onsets,
+    frequencyBands: { lowMaxHz: filtered.lowCutoff, midMaxHz: filtered.midCutoff },
     tempo,
     beats,
+    beatDetails,
     warnings: [
       '全部结果为 draft 机器推定，不代表听辨歌词、演唱词时间或 verified 节拍。',
-      '低能量停顿可能只属于伴奏；能量起音可能来自打击乐或混音，不能用于断言歌词边界。',
+      '低频/中频/高频滤波带能量上升仍是音乐瞬态候选，可能来自鼓、人声或混音，不能用于断言歌词边界。',
+      'beats 只保留局部窗口支持的拍点；beatDetails 区分可观测起音与网格预测，长静音处不继续外推。',
       '半速/双速、切分音、拖音、变速、弱拍、短片段与单声道降采样均可能改变 BPM/相位候选。',
       'tempo.confidence 为未经真实歌曲标定的启发式一致性评分，不是检测正确的概率。',
-      `时间精度受 ${actualWindow} 秒 RMS 窗和 ${actualHop} 秒步长限制；起音时点使用窗口中心估计。`,
+      `时间精度受 ${actualWindow} 秒能量窗和 ${actualHop} 秒步长限制；起音时点使用窗口中心估计。`,
     ],
     limits: { maxDecodedSeconds: MAX_SECONDS, maxPcmBytes: sampleRate * MAX_SECONDS * 4 },
   };
@@ -483,7 +710,7 @@ const usage = `用法：node analyze-audio.mjs <audio> [--start 秒] [--duration
 仅用本机 ffmpeg 与 Node 内置模块。默认 8 kHz 单声道 float PCM。
 --ffmpeg 优先于 FFMPEG_PATH；未指定时使用 PATH。显式无效路径会失败。
 全部结果为 draft 机器候选，不能声称听辨歌词或 verified 节拍。
-所有时点为成片秒；sourceOffset 保存 --start。网格：phaseSeconds + n * 60 / bpm。
+所有时点为片段秒；sourceOffset 保存 --start。局部窗口（tempo.windows）汇报速度与证据；beats 只保留有局部音频支持的候选，beatDetails 标记 observed 或 predicted。无证据的静音/间断区不外推拍点。
 一次最多分析 600 秒；超长输入会拒绝，请指定片段。PCM 上限为 38.4 MB（16 kHz），
 拼接时最多两份 PCM 约 76.8 MB，另有包络及 JSON 内存；短片段更适合人工校对。`;
 

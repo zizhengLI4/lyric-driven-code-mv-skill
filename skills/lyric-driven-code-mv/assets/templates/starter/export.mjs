@@ -7,7 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { renderFrame, WIDTH, HEIGHT, DURATION, DEFAULT_SEED, CAPTIONS, SCENE_RENDERERS } from './frame.mjs';
-import { createTimeline, DEFAULT_CAPTION_STYLE } from './timeline.mjs';
+import { createTimeline, captionSegmentsAtTime, DEFAULT_CAPTION_STYLE } from './timeline.mjs';
 import { encodePNG, inspectPNG } from './png.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -15,7 +15,7 @@ const HELP = `用法：node export.mjs [参数]
 无需 npm 包；需要已有 Node.js、ffmpeg（libx264/libass）和 ffprobe。
 默认：12 秒 / 30 fps / 384×216 像素网格 → 1920×1080，原创合成节奏与高分辨率双语字幕。
 
-  --out PATH          MP4 输出路径（默认当前目录 paper-boat-demo.mp4）
+  --out PATH          MP4 输出路径（默认当前目录 render-check.mp4）
   --storyboard PATH   分镜JSON作为时间/字幕/转场/项目参数真源
   --audio PATH        重定位JSON记录的同一音轨，不能替换为另一首歌
   --frame-time N      导出指定成片秒的世界层单帧，无需FFmpeg
@@ -23,7 +23,7 @@ const HELP = `用法：node export.mjs [参数]
   --width N           最终输出宽度，正偶数（默认1920）
   --height N          最终输出高度，正偶数（默认1080）
   --fps N             1–120 的整数（默认30）
-  --seed TEXT         固定种子（默认 paper-boat-original-v1）
+  --seed TEXT         固定种子（默认 pixel-render-check-v1）
   --frames-dir PATH   保存PNG、配置、节奏WAV及ASS；有此参数仍会编码MP4
   --frames-only       只生成上面的文件，须配 --frames-dir
   --resume            验证配置/每帧尺寸/PNG完整性后复用，须配 --frames-dir
@@ -42,11 +42,11 @@ const HELP = `用法：node export.mjs [参数]
     node export.mjs --frames-dir frames --frames-only
     node export.mjs --frames-dir frames --resume --out demo.mp4
     node export.mjs --storyboard sb.json --sfx --out mv.mp4
-未指定分镜时使用原创演示。draft/verified分镜须提供音频；自定义scene.id须注册画法。已有框架工程请按README适配。
+未指定分镜时使用色块/网格技术检查画面。draft/verified分镜须提供音频；自定义scene.id须注册画法。已有框架工程请按README适配。
 `;
 
 export function parseArgs(argv) {
-  const c = { out: resolve('paper-boat-demo.mp4'), width: 1920, height: 1080, fps: 30, seed: DEFAULT_SEED, duration: DURATION, storyboard: null, audio: null, provided: [], framesDir: null, resume: false, framesOnly: false, ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg', ffprobe: process.env.FFPROBE_PATH || 'ffprobe', font: process.platform === 'win32' ? 'Microsoft YaHei' : 'sans-serif', preview: false, port: 8765, sfx: false, sfxScript: null, sfxGain: 0.85, help: false };
+  const c = { out: resolve('render-check.mp4'), width: 1920, height: 1080, fps: 30, seed: DEFAULT_SEED, duration: DURATION, storyboard: null, audio: null, provided: [], framesDir: null, resume: false, framesOnly: false, ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg', ffprobe: process.env.FFPROBE_PATH || 'ffprobe', font: process.platform === 'win32' ? 'Microsoft YaHei' : 'sans-serif', preview: false, port: 8765, sfx: false, sfxScript: null, sfxGain: 0.85, help: false };
   const flags = { '--help': 'help', '--resume': 'resume', '--frames-only': 'framesOnly', '--preview': 'preview', '--sfx': 'sfx' };
   const options = { '--out': 'out', '--storyboard': 'storyboard', '--audio': 'audio', '--frame-time': 'frameTime', '--frame-out': 'frameOut', '--width': 'width', '--height': 'height', '--fps': 'fps', '--seed': 'seed', '--frames-dir': 'framesDir', '--ffmpeg': 'ffmpeg', '--ffprobe': 'ffprobe', '--font': 'font', '--port': 'port', '--sfx-script': 'sfxScript', '--sfx-gain': 'sfxGain' };
   for (let i = 0; i < argv.length; i++) {
@@ -232,6 +232,60 @@ const assColor = (hex, opacity = 1) => {
   return `&H${a}${rgb.slice(4, 6)}${rgb.slice(2, 4)}${rgb.slice(0, 2)}`;
 };
 
+function wordCaptionIntervals(cue) {
+  if (!Array.isArray(cue.words) || cue.words.length === 0) throw new Error(`lyrics[${cue.id}].words须为非空数组`);
+  const roundCentisecond = time => Math.round(time * 100) / 100;
+  let previousEnd = cue.start;
+  let previousRoundedEnd = roundCentisecond(cue.start);
+  let joinedText = '';
+  const boundaries = [roundCentisecond(cue.start)];
+  for (let index = 0; index < cue.words.length; index++) {
+    const word = cue.words[index], path = `lyrics[${cue.id}].words[${index}]`;
+    if (typeof word?.text !== 'string' || !word.text.trim()
+      || !Number.isFinite(word.start) || !Number.isFinite(word.end)
+      || word.start < cue.start || word.end > cue.end || word.end <= word.start || word.start < previousEnd) {
+      throw new Error(`${path}词序、内容或时间区间无效`);
+    }
+    const start = roundCentisecond(word.start), end = roundCentisecond(word.end);
+    if (end <= start) throw new Error(`${path}按 ASS 百分秒量化后成为零长，无法稳定呈现`);
+    if (start < previousRoundedEnd) throw new Error(`${path}按 ASS 百分秒量化后词序重叠`);
+    joinedText += word.text;
+    boundaries.push(start, end);
+    previousEnd = word.end;
+    previousRoundedEnd = end;
+  }
+  if (joinedText !== (cue.zh ?? cue.text)) throw new Error(`lyrics[${cue.id}].words拼接结果与可见歌词不一致`);
+  boundaries.push(roundCentisecond(cue.end));
+  const times = [...new Set(boundaries)].sort((a, b) => a - b);
+  if (times.length < 2) throw new Error(`lyrics[${cue.id}]百分秒量化后时长为零`);
+  return times.slice(0, -1).map((start, index) => ({ start, end: times[index + 1] }));
+}
+
+function timedWordAssText(cue, time, colors) {
+  return captionSegmentsAtTime(cue, time)
+    .map(segment => `{\\c${assColor(colors[segment.state])}&}${assText(segment.text)}`)
+    .join('');
+}
+
+function timedWordDialogue(cue, prefix, suffix, styleName, colors) {
+  const intervals = wordCaptionIntervals(cue);
+  const roundCentisecond = time => Math.round(time * 100) / 100;
+  const quantizedCue = {
+    ...cue,
+    start: roundCentisecond(cue.start),
+    end: roundCentisecond(cue.end),
+    words: cue.words.map(word => ({
+      ...word,
+      start: roundCentisecond(word.start),
+      end: roundCentisecond(word.end),
+    })),
+  };
+  return intervals.map(({ start, end }) => {
+    const time = (start + end) / 2;
+    return `Dialogue: 0,${assTime(start)},${assTime(end)},${styleName},,0,0,0,,${prefix}${timedWordAssText(quantizedCue, time, colors)}${suffix}`;
+  });
+}
+
 function scenePanelASS(c, timeline, style) {
   const font = style.font || c.font, secondaryFont = style.secondaryFont || font;
   const size = Math.round(c.height * 0.045), secondarySize = Math.round(c.height * 0.028), introSize = Math.round(c.height * 0.025);
@@ -253,7 +307,14 @@ function scenePanelASS(c, timeline, style) {
   if (timeline.notice) dialogue.push(`Dialogue: 1,0:00:00.00,${assTime(timeline.noticeEnd)},PanelNotice,,0,0,0,,${assText(timeline.notice)}`);
   for (const cue of timeline.captions) {
     const english = style.lines > 1 && cue.en ? `\\N{\\rLyricSecondary\\fs${secondarySize}}${assText(cue.en)}` : '';
-    dialogue.push(`Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},LyricPanel,,0,0,0,,{\\an2\\pos(${x},${y})}${assText(cue.zh)}${english}`);
+    const prefix = `{\\an2\\pos(${x},${y})}`;
+    if (cue.words) {
+      dialogue.push(...timedWordDialogue(cue, prefix, english, 'LyricPanel', {
+        upcoming: style.secondary.color,
+        active: style.panel.accent,
+        played: style.primary.color,
+      }));
+    } else dialogue.push(`Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},LyricPanel,,0,0,0,,${prefix}${assText(cue.zh)}${english}`);
   }
   if (c.audioPath && c.audioRecord?.provenance !== 'original' && c.audioRecord?.credit?.trim()) {
     const credit = `音乐：${c.audioRecord.credit}${c.audioRecord.license ? `｜${c.audioRecord.license}` : ''}`;
@@ -268,7 +329,7 @@ export function createASS(c) {
   if (captionStyle.mode === 'scene-panel') {
     const styleInfo = scenePanelASS(c, timeline, captionStyle);
     const header = [
-      '[Script Info]', 'Title: 未抵达的灯 · 原创12秒模板', 'ScriptType: v4.00+', `PlayResX: ${c.width}`, `PlayResY: ${c.height}`, 'ScaledBorderAndShadow: yes', 'WrapStyle: 2', '',
+      '[Script Info]', 'Title: 像素 MV 渲染链路检查模板', 'ScriptType: v4.00+', `PlayResX: ${c.width}`, `PlayResY: ${c.height}`, 'ScaledBorderAndShadow: yes', 'WrapStyle: 2', '',
       '[V4+ Styles]', 'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
       ...styleInfo.lines, ''
     ];
@@ -277,14 +338,24 @@ export function createASS(c) {
   const size = Math.round(c.height * 0.041), enSize = Math.round(c.height * 0.029), margin = Math.round(c.height * 0.07), x = Math.round(c.width / 2), y = c.height - margin;
   const introSize = Math.round(c.height * 0.025);
   const lines = [
-    '[Script Info]', 'Title: 未抵达的灯 · 原创12秒模板', 'ScriptType: v4.00+', `PlayResX: ${c.width}`, `PlayResY: ${c.height}`, 'ScaledBorderAndShadow: yes', 'WrapStyle: 2', '',
+    '[Script Info]', 'Title: 像素 MV 渲染链路检查模板', 'ScriptType: v4.00+', `PlayResX: ${c.width}`, `PlayResY: ${c.height}`, 'ScaledBorderAndShadow: yes', 'WrapStyle: 2', '',
     '[V4+ Styles]', 'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
     `Style: Caption,${c.font},${size},&H00F4F5ED,&H00FFFFFF,&H90131B29,&H90131B29,0,0,0,0,100,100,0,0,3,${Math.max(4, Math.round(c.height * 0.009))},0,2,${Math.round(c.width * 0.08)},${Math.round(c.width * 0.08)},${margin},1`,
     `Style: Notice,${c.font},${introSize},&H00E5DEC4,&H00FFFFFF,&H90131B29,&H90131B29,0,0,0,0,100,100,0,0,3,${Math.max(3, Math.round(c.height * 0.006))},0,8,${Math.round(c.width * 0.08)},${Math.round(c.width * 0.08)},${Math.round(c.height * 0.06)},1`, '',
     '[Events]', 'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
   ];
   if (timeline.notice) lines.push(`Dialogue: 1,0:00:00.00,${assTime(timeline.noticeEnd)},Notice,,0,0,0,,${assText(timeline.notice)}`);
-  for (const cue of timeline.captions) lines.push(`Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},Caption,,0,0,0,,{\\an2\\pos(${x},${y})}${assText(cue.zh)}${cue.en ? `\\N{\\fs${enSize}}${assText(cue.en)}` : ''}`);
+  for (const cue of timeline.captions) {
+    const prefix = `{\\an2\\pos(${x},${y})}`;
+    const english = cue.en ? `\\N{\\rCaption\\fs${enSize}}${assText(cue.en)}` : '';
+    if (cue.words) {
+      lines.push(...timedWordDialogue(cue, prefix, english, 'Caption', {
+        upcoming: captionStyle.secondary.color,
+        active: captionStyle.panel.accent,
+        played: captionStyle.primary.color,
+      }));
+    } else lines.push(`Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},Caption,,0,0,0,,${prefix}${assText(cue.zh)}${cue.en ? `\\N{\\fs${enSize}}${assText(cue.en)}` : ''}`);
+  }
   if (c.audioPath && c.audioRecord?.provenance !== 'original' && c.audioRecord?.credit?.trim()) {
     const credit = `音乐：${c.audioRecord.credit}${c.audioRecord.license ? `｜${c.audioRecord.license}` : ''}`;
     lines.push(`Dialogue: 2,${assTime(Math.max(0, c.duration - 4))},${assTime(c.duration)},Notice,,0,0,0,,{\\an8\\pos(${x},${Math.round(c.height * 0.16)})}${assText(credit)}`);
