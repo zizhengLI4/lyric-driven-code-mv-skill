@@ -189,6 +189,10 @@ Skill 先确认录音版本，再查创作背景和该版本的热门评论。�
 
 BPM、拍点、能量峰和自动起音检测都是规划线索。明确标记为踩拍的事件可以由同步检查器与候选节拍比较，候选置信值低时不提供吸附建议。默认 80 ms 容差用于结构检查，不代表听感自动通过。详见[同步候选图](skills/lyric-driven-code-mv/references/sync-review.md)、[音频与授权](skills/lyric-driven-code-mv/references/audio-and-rights.md)和[时间与分镜](skills/lyric-driven-code-mv/references/storyboard-and-timing.md)。
 
+### 怎样判断动作真的卡在音乐上
+
+先用指定录音挑观众能听出来的重音，再决定用一个动作、两步回应，还是少量连击。例如先听到重音时闸杆抬到位，下一处明显重音才把候船牌翻绿。口白和拖音间可以让故事自然往前走。开场保留能看懂的机位，让主体本身带动节奏。制作时逐下回到原声核对，再从成片抽取接触前后帧；回看时可关掉新增提示音试听。详见[重音选择与逐击验收](skills/lyric-driven-code-mv/references/sfx-and-beat.md#重音选择与逐击验收)。
+
 ### 音乐候选如何进入制作流程
 
 先确认歌曲版本、剪辑起点和成片长度，再从本机音轨抽取候选数据。示例命令只分析一段歌曲并把结果保存到项目自己的工作目录：
