@@ -145,3 +145,5 @@ ffmpeg -y -ss 11.9 -i C:\你的输出目录\render-check.mp4 -frames:v 1 C:\你�
 
 
 `frame.mjs` 与 `frame-core.mjs` 同目录，复制本目录即可独立运行 `export.mjs --help`。
+
+可选 Remotion 驱动沿用此入口，传 --renderer remotion。安装、Studio、旧工具调用及正式导出参见 [Remotion 制作与旧工具接入](../../../references/remotion-mv.md)。

@@ -8,6 +8,16 @@
 
 这个仓库包含主 Skill、制作指南、分镜格式、音频分析与校验脚本、像素场景模块，以及一套最小渲染检查模板。可按任务需要读取对应文件，无需一次性学习所有工具。
 
+## 用 Remotion 做歌词 MV
+
+可以直接说「用 Remotion 把文件夹里的这首歌做成 MV」。原有 MV 和 Remotion 共用分镜与动作卡点。已有导出脚本可以继续调用 `export.mjs`，通过 `--renderer remotion` 切换驱动。
+
+1. **定规格**。默认 1920×1080、30 fps、16:9 横屏，保留歌曲原唱，用中文字幕跟随演唱，无旁白。
+2. **卡点**。先分析本曲 BPM、局部速度和重拍，再把选定的切镜或动作落到对应帧。例如球在拍前下落，鼓响时触键，拍后弹起。对照成片检查接触前后帧和同段音频。
+3. **配音效**。为关键动作选取与画面、歌曲相配的音色，用代码合成，并让声音的冲击点对齐动作。
+
+[Remotion 安装、预览与导出](skills/lyric-driven-code-mv/references/remotion-mv.md) · [共用卡点方法](skills/lyric-driven-code-mv/references/sfx-and-beat.md#动作卡点与成片复核) · [120 BPM 击键示例分镜](skills/lyric-driven-code-mv/assets/storyboard-beat-keys.json)
+
 ## 这个 Skill 可以帮你完成什么
 
 | 环节 | 作用 |

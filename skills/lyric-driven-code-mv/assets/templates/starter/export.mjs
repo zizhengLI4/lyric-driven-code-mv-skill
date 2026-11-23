@@ -20,6 +20,7 @@ const HELP = `用法：node export.mjs [参数]
   --out PATH          MP4 输出路径（默认当前目录 render-check.mp4）
   --storyboard PATH   分镜JSON作为时间/字幕/转场/项目参数真源
   --audio PATH        重定位JSON记录的同一音轨，不能替换为另一首歌
+  --renderer NAME     starter（默认）或 remotion，可搭配 --preview 或正式导出
   --frame-time N      导出指定成片秒的世界层单帧，无需FFmpeg
   --frame-out PATH    配合--frame-time的PNG路径（默认世界层）
   --frame-final       单帧按正式尺寸合成字幕，使用 FFmpeg/libass
@@ -53,7 +54,7 @@ const HELP = `用法：node export.mjs [参数]
 export function parseArgs(argv) {
   const c = { out: resolve('render-check.mp4'), width: 1920, height: 1080, fps: 30, seed: DEFAULT_SEED, duration: DURATION, storyboard: null, audio: null, provided: [], framesDir: null, resume: false, framesOnly: false, ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg', ffprobe: process.env.FFPROBE_PATH || 'ffprobe', font: process.platform === 'win32' ? 'Microsoft YaHei' : 'sans-serif', preview: false, port: 8765, sfx: false, noSfx: false, review: null, frameFinal: false, sfxScript: null, sfxGain: 0.85, help: false };
   const flags = { '--help': 'help', '--resume': 'resume', '--frames-only': 'framesOnly', '--preview': 'preview', '--sfx': 'sfx', '--no-sfx': 'noSfx', '--frame-final': 'frameFinal' };
-  const options = { '--out': 'out', '--storyboard': 'storyboard', '--review': 'review', '--audio': 'audio', '--frame-time': 'frameTime', '--frame-out': 'frameOut', '--width': 'width', '--height': 'height', '--fps': 'fps', '--seed': 'seed', '--frames-dir': 'framesDir', '--ffmpeg': 'ffmpeg', '--ffprobe': 'ffprobe', '--font': 'font', '--port': 'port', '--sfx-script': 'sfxScript', '--sfx-gain': 'sfxGain' };
+  const options = { '--renderer': 'renderer', '--out': 'out', '--storyboard': 'storyboard', '--review': 'review', '--audio': 'audio', '--frame-time': 'frameTime', '--frame-out': 'frameOut', '--width': 'width', '--height': 'height', '--fps': 'fps', '--seed': 'seed', '--frames-dir': 'framesDir', '--ffmpeg': 'ffmpeg', '--ffprobe': 'ffprobe', '--font': 'font', '--port': 'port', '--sfx-script': 'sfxScript', '--sfx-gain': 'sfxGain' };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (Object.hasOwn(flags, arg)) {
@@ -69,6 +70,9 @@ export function parseArgs(argv) {
     c.provided.push(key);
   }
   if (c.help) return c;
+  c.renderer ??= process.env.LYRIC_MV_RENDERER || 'starter';
+  if (!['starter','remotion'].includes(c.renderer)) throw new Error('未知 renderer：' + c.renderer);
+  if (c.renderer === 'remotion' && c.framesDir) throw new Error('--frames-dir 和断点续渲使用 starter 渲染器');
   if (!Number.isInteger(c.fps) || c.fps < 1 || c.fps > 120) throw new Error('fps 须为 1–120 的整数');
   for (const key of ['width', 'height']) if (!Number.isInteger(c[key]) || c[key] < 16 || c[key] > 7680 || c[key] % 2) throw new Error(`输出尺寸 ${key} 须为 16–7680 的偶数`);
   if (!Number.isInteger(c.port) || c.port < 1 || c.port > 65535) throw new Error('port 须为1–65535的整数');
@@ -157,7 +161,7 @@ export async function loadProject(c) {
   result.expectedSfx = sfxArrays.reduce((count, events) => count + events.length, 0);
   if (c.noSfx && result.requiresVisualReview) throw new Error('--no-sfx 只用于技术检查；真实项目按分镜混入提示音');
   if (c.sfx === true && result.expectedSfx === 0) throw new Error('--sfx 已开启，但分镜里没有 project.sfx[] 或 scene.sfx[]');
-  if (!c.noSfx && result.expectedSfx && !c.frameOut && !c.preview) {
+  if (!c.noSfx && result.expectedSfx && !c.frameOut && (!c.preview || c.renderer === 'remotion')) {
     if (result.requiresVisualReview && c.sfxGain === 0) throw new Error('真实项目已安排提示音，--sfx-gain 须大于 0');
     const { collectSfx } = await loadSfxModule(c);
     result.sfx = collectSfx(data);
@@ -173,10 +177,18 @@ export async function exportFrame(c, log = console.log) {
   if (!c.frameOut || !Number.isFinite(c.frameTime) || c.frameTime < 0 || c.frameTime >= c.duration) throw new Error('--frame-time须位于[0,duration)，并提供--frame-out');
   await assertNoOutputInputAliases(c, 'frame');
   await mkdir(dirname(c.frameOut), { recursive: true });
-  let png = encodePNG(renderFrame(c.frameTime, frameOptions(c)));
+  let png;
+  if (c.renderer === 'remotion') {
+    const assets = await mkdtemp(join(dirname(c.frameOut), '.remotion-still-'));
+    try {
+      const path = join(assets, 'still.png');
+      await (await import('./remotion-runner.mjs')).runRemotion(c, assets, 'still', path);
+      png = await readFile(path);
+    } finally { await rm(assets, {recursive:true, force:true}); }
+  } else png = encodePNG(renderFrame(c.frameTime, frameOptions(c)));
   if (c.frameFinal) png = await compositeFinalFrame(c, png);
   await atomicWrite(c.frameOut, png);
-  const { width, height } = inspectPNG(png, { template: !c.frameFinal });
+  const { width, height } = inspectPNG(png, { template: !c.frameFinal && c.renderer !== 'remotion' });
   log(`${c.frameFinal ? '正式字幕单帧' : '世界层单帧'}：${c.frameOut}（${width}×${height}，${c.frameTime}成片秒）`);
 
 }
@@ -207,7 +219,7 @@ async function compositeFinalFrame(c, png) {
 
 async function confirmCurrentVisuals(c) {
   if (!c.requiresVisualReview && !c.review) return null;
-  return checkVisualReview({ storyboardPath: c.storyboard, reviewPath: c.review, requiredSources: STARTER_VISUAL_SOURCES, expectedStoryboardHash: c.storyboardHash, expectedFont: c.font });
+  return checkVisualReview({ storyboardPath: c.storyboard, reviewPath: c.review, requiredSources: c.renderer === 'remotion' ? [...STARTER_VISUAL_SOURCES, join(here, 'remotion.jsx'), join(here, 'remotion-runner.mjs')] : STARTER_VISUAL_SOURCES, expectedStoryboardHash: c.storyboardHash, expectedFont: c.font });
 }
 
 async function renderConfig(c) {
@@ -647,8 +659,22 @@ export async function exportVideo(c, log = console.log) {
       if (c.visualReview && (await confirmCurrentVisuals(c)).sha256 !== c.visualReview.sha256) throw new Error('渲染期间确认记录已变更，请核对后重试');
       await atomicWrite(join(assets, 'asset-manifest.json'), JSON.stringify(records, null, 2) + '\n');
       log(`已生成可恢复帧目录：${c.framesDir}`); return null; }
+    if (c.preview && c.renderer === 'remotion') {
+      await (await import('./remotion-runner.mjs')).runRemotion(c, assets, 'studio');
+      return;
+    }
     temporaryOut = join(dirname(c.out), `.rendering-${process.pid}-${basename(c.out)}`);
-    await pipeFrames(c, assets, temporaryOut, log);
+    if (c.renderer === 'remotion') {
+      const {runRemotion} = await import('./remotion-runner.mjs');
+      if (c.preview) { await runRemotion(c, assets, 'studio'); return; }
+      const world = join(assets, 'world.mp4');
+      await runRemotion(c, assets, 'render', world);
+      const mux = spawnSync(c.ffmpeg, ['-v','error','-y','-i',world,'-i','audio.wav','-vf',finalVideoFilter(c),
+        '-map','0:v','-map','1:a','-c:v','libx264','-crf','18','-pix_fmt','yuv420p','-c:a','aac','-b:a','160k',
+        '-t',String(c.duration),'-movflags','+faststart',temporaryOut], {cwd:assets, windowsHide:true, encoding:'utf8'});
+      if (mux.status !== 0) throw new Error(mux.error?.message ?? mux.stderr);
+      records.renderer = 'remotion';
+    } else await pipeFrames(c, assets, temporaryOut, log);
     const info = await verifyOutput(c, temporaryOut);
     if ((await stat(temporaryOut)).size < 1) throw new Error('编码结果为空');
     if (sound) {
@@ -691,7 +717,7 @@ async function main() {
     const c = parseArgs(process.argv.slice(2));
     if (c.help) console.log(HELP);
     else if (c.frameOut) await exportFrame(c);
-    else if (c.preview) {
+    else if (c.preview && c.renderer !== 'remotion') {
       const project = await loadProject(c);
       await confirmCurrentVisuals(project);
       preview(project);

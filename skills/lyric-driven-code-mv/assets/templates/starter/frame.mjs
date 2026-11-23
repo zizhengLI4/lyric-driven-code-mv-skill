@@ -94,7 +94,46 @@ export function renderTimelineFrame(time, drawScene = renderScene, options = {})
   return coreRenderTimelineFrame(time, drawScene, options.timeline ? options : { ...options, timeline: DEFAULT_TIMELINE });
 }
 
+/** 四键击奏示例。事件使用片段绝对秒；接触姿态由相邻事件插值。 */
+function renderBeatKeys(local, options) {
+  const frame = new FB(WIDTH, HEIGHT);
+  const scene = options.timeline.scenes.find(row => row.id === 'beat-keys');
+  const events = scene.events;
+  const time = scene.start + local;
+  const index = events.findLastIndex(event => event.at <= time);
+  const keyOrder = [0, 2, 1, 3, 2, 0, 3, 1];
+  const keyAt = i => keyOrder[i % keyOrder.length];
+  const xAt = i => 66 + 84 * keyAt(i);
+  const elapsed = index < 0 ? Infinity : time - events[index].at;
+  const next = events[index + 1];
+  const phase = next && index >= 0 ? clamp(elapsed / (next.at - events[index].at), 0, 1) : 0;
+  const contact = Math.max(0, 1 - elapsed / 0.15);
+  const keys = [[239,124,97],[240,181,104],[103,204,187],[147,149,219]];
+  frame.rect(0, 0, WIDTH, HEIGHT, [21,29,42]);
+  for (let lane = 0; lane < 4; lane++) {
+    const x = 66 + lane * 84;
+    const active = index >= 0 && keyAt(index) === lane;
+    const press = active ? Math.round(6 * contact) : 0;
+    frame.rect(x-34, 32, 68, 129, [28,39,56]);
+    frame.rect(x-33, 140, 66, 19, [49,62,78]);
+    frame.rect(x-33, 132 + press, 66, 13, keys[lane]);
+    frame.rect(x-32, 132 + press, 64, 3, active && contact > 0.8 ? [255,249,222] : keys[lane]);
+    if (active && contact > 0) {
+      const spread = 16 + (1-contact)*19;
+      for (const dir of [-1,1]) frame.rect(x + dir*spread-2, 119-(1-contact)*10, 4, 5, keys[lane]);
+    }
+  }
+  if (index >= 0) {
+    const x = next ? mix(xAt(index), xAt(index+1), phase) : xAt(index);
+    const y = 124 + 6*contact - 78*4*phase*(1-phase);
+    frame.circle(x, y, 9, [246,234,202]);
+    frame.circle(x-3, y-3, 2, [255,255,245]);
+  }
+  return frame;
+}
+
 export const SCENE_RENDERERS = Object.freeze({
+  'beat-keys': renderBeatKeys,
   send: (local, options) => renderScene(0, local, options),
   receive: (local, options) => renderScene(1, local, options),
 });
@@ -109,6 +148,7 @@ export function renderFrame(time, options = {}) {
     const scene = sceneOptions.timeline.scenes[index];
     const renderer = SCENE_RENDERERS[scene.id];
     if (!renderer) throw new Error(`镜头${scene.id}没有注册画法`);
+    if (scene.id === 'beat-keys') return renderer(local, sceneOptions);
     return renderer(local * 6 / (scene.end - scene.start), sceneOptions);
   };
   return renderTimelineFrame(time, drawScene, options);
