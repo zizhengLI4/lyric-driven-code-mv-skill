@@ -86,6 +86,8 @@ Node 侧零第三方包：`scripts/`、`assets/scenes/`、`assets/templates/star
 - starter 的 LRC 导入、音效、预览、字幕及 FFmpeg/FFprobe 导出检查见 [starter 说明](assets/templates/starter/README.md) 与 [依赖与交付](references/dependencies-and-delivery.md)。
 - 音效事件和人工试听边界见 [音效与卡点](references/sfx-and-beat.md)。
 
+制作整曲前，从项目实际渲染入口取三个代表镜头：两个不同地点各一帧，一个人物反应近景。遮住文字与手持道具，检查能否从建筑结构、空间纵深或家具布局辨出两地，从眉眼、嘴形和视线读出反应。若两地共用同一底图且只替换前景，或近景只放大远景人物，先重绘对应资产，再扩整曲。导出后在一句实际演唱的位置检查歌词正文与时点；章节短句单独验收。
+
 ## 完成标准
 
 - 去掉字幕，动作仍能说明每句的具体含义；主体、道具、接触与结果都可读，HUD 变化可追溯到行动。
