@@ -103,8 +103,7 @@
 
 ```powershell
 node --version
-ffmpeg -version
-ffprobe -version
+node skills/lyric-driven-code-mv/scripts/check-environment.mjs --missing-only
 
 node skills/lyric-driven-code-mv/scripts/analyze-audio.mjs --help
 node skills/lyric-driven-code-mv/scripts/validate-storyboard.mjs --help

@@ -28,7 +28,8 @@ test('public entry points do not present the retired videos or paper-boat story 
   const fallbackRenderer = read(join(skill, 'scripts/minimal-renderer.py'));
   const storyboardExample = read(join(skill, 'assets/storyboard-example.json'));
   const sfxExample = read(join(skill, 'assets/storyboard-sfx-demo.json'));
-  const productionGuide = read(join(skill, 'references/pixel-mv-production.md'));
+  const productionGuide = read(join(skill, 'references/storyboard-and-timing.md'));
+  const visualGuide = read(join(skill, 'references/pixel-visuals.md'));
   const storyGuide = read(join(skill, 'references/research-and-story.md'));
   const timingGuide = read(join(skill, 'references/storyboard-and-timing.md'));
   const pixelFont = read(join(skill, 'scripts/pixel-font.py'));
@@ -47,9 +48,9 @@ test('public entry points do not present the retired videos or paper-boat story 
   assert.match(storyboardExample, /技术校验分镜/);
   assert.match(storyboardExample, /色块、时间标记、字幕/);
   assert.doesNotMatch(storyboardExample, /lyricsMeta/);
-  assert.match(productionGuide, /文字制作案例/);
+  assert.match(visualGuide, /文字制作案例/);
   assert.match(productionGuide, /普通朋友/);
-  assert.doesNotMatch(storyGuide, /纸船|另一岸|沿河横移|放船/);
+  assert.doesNotMatch(storyGuide.split('## 参考片取证')[0], /纸船|另一岸|沿河横移|放船/);
   assert.doesNotMatch(timingGuide, /纸船|另一岸/);
   assert.doesNotMatch(pixelFont, /河面舞台|同一夜 · 两岸|SIGNAL 3|CHAPTER 02 \/ 12/);
 });

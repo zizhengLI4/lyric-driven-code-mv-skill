@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -55,17 +55,29 @@ test('最小渲染器从技能目录运行时拒绝默认写盘', () => {
 
 test('技能声明本地渠道、依赖文件和角色差异度门槛', () => {
   const skillText = readFileSync(join(skill, 'SKILL.md'), 'utf8');
-  const visualText = readFileSync(join(skill, 'references/pixel-game-visuals.md'), 'utf8');
+  const visualText = readFileSync(join(skill, 'references/pixel-visuals.md'), 'utf8');
   assert.match(skillText, /channel:\s*local/);
   assert.ok(existsSync(join(skill, 'requirements.txt')));
-  assert.match(skillText, /卡拉OK|K歌|karaoke/i);
+  assert.match(skillText, /卡拉OK|K\s*歌|karaoke/i);
+  assert.match(skillText, /^metadata:\r?\n  version: "\d+\.\d+\.\d+"/m);
   assert.match(visualText, /角色差异度与完成度门槛/);
   assert.match(visualText, /纯黑剪影|剪影盲测/);
 });
 
+test('Skill 首页直达每份参考文档，装置说明覆盖包内所有 JSON 模板', () => {
+  const skillText = readFileSync(join(skill, 'SKILL.md'), 'utf8');
+  const referenceNames = readdirSync(join(skill, 'references')).filter(name => name.endsWith('.md')).sort();
+  const linked = [...skillText.matchAll(/\]\(references\/([^#)]+\.md)(?:#[^)]+)?\)/g)].map(match => match[1]);
+  assert.deepEqual([...new Set(linked)].sort(), referenceNames);
+
+  const guide = readFileSync(join(skill, 'references/devices.md'), 'utf8');
+  const templates = readdirSync(join(skill, 'assets/devices')).filter(name => name.endsWith('.json'));
+  for (const name of templates) assert.ok(guide.includes(`(../assets/devices/${name})`), name);
+});
+
 test('参考片记录区分平台自动摘要、实际视听证据与未知流程', () => {
-  const analysisText = readFileSync(join(skill, 'references/reference-film-analysis.md'), 'utf8');
-  const productionText = readFileSync(join(skill, 'references/pixel-mv-production.md'), 'utf8');
+  const analysisText = readFileSync(join(skill, 'references/research-and-story.md'), 'utf8').split('## 参考片取证')[1];
+  const productionText = readFileSync(join(skill, 'references/production-cases.md'), 'utf8');
   assert.match(analysisText, /自动章节摘要/);
   assert.match(analysisText, /导航线索/);
   assert.match(analysisText, /静音|未试听/);
@@ -77,7 +89,7 @@ test('参考片记录区分平台自动摘要、实际视听证据与未知流�
 
 test('逐词字幕文档说明整句工具边界，并让 AI 素材记录按实际使用填写', () => {
   const skillText = readFileSync(join(skill, 'SKILL.md'), 'utf8');
-  const productionText = readFileSync(join(skill, 'references/pixel-mv-production.md'), 'utf8');
+  const productionText = readFileSync(join(skill, 'references/storyboard-and-timing.md'), 'utf8');
   assert.match(skillText, /LRC 转换仍以整句为单位/);
   assert.match(skillText, /可选 `lyrics\[\]\.words\[\]`/);
   assert.match(skillText, /均分只作为视觉填充/);
@@ -86,14 +98,17 @@ test('逐词字幕文档说明整句工具边界，并让 AI 素材记录按实�
 
 test('制作说明匹配像素RPG目标风格并允许按范围跳过样片', () => {
   const skillText = readFileSync(join(skill, 'SKILL.md'), 'utf8');
-  const productionText = readFileSync(join(skill, 'references/pixel-mv-production.md'), 'utf8');
-  const analysisText = readFileSync(join(skill, 'references/reference-film-analysis.md'), 'utf8');
-  const reviewText = readFileSync(join(skill, 'references/mv-review-and-refinement.md'), 'utf8');
-  const codeVisualText = readFileSync(join(skill, 'references/code-directed-visuals.md'), 'utf8');
-  const pixelVisualText = readFileSync(join(skill, 'references/pixel-game-visuals.md'), 'utf8');
-  const syncReviewText = readFileSync(join(skill, 'references/sync-review.md'), 'utf8');
+  const productionText = readFileSync(join(skill, 'references/storyboard-and-timing.md'), 'utf8');
+  const researchText = readFileSync(join(skill, 'references/research-and-story.md'), 'utf8');
+  const analysisText = researchText.split('## 参考片取证')[1].split('## 代码绘制与提示词')[0];
+  const reviewText = readFileSync(join(skill, 'references/review-and-acceptance.md'), 'utf8');
+  const codeVisualText = researchText.split('## 代码绘制与提示词')[1];
+  const pixelVisualText = readFileSync(join(skill, 'references/pixel-visuals.md'), 'utf8');
+  const syncReviewText = reviewText.split('## 同步候选与可视化')[1];
   assert.match(skillText, /按需求选做动态试片/);
-  assert.match(skillText, /四格相纸.*画风与制作规格/);
+  assert.match(skillText, /风格未定.*可打开《四格相纸》/);
+  assert.doesNotMatch(skillText, /four-frame-photo-frames\.png/);
+  assert.match(skillText, /公开热评按需查看.*不得声称看过、引用或转述/s);
   assert.match(skillText, /分别记录用户对场景和人物的明确确认/);
   assert.match(productionText, /拆歌.*静帧.*样片.*扩成片/s);
   assert.match(productionText, /跳过样片.*静帧.*分镜/s);
@@ -111,9 +126,9 @@ test('制作说明匹配像素RPG目标风格并允许按范围跳过样片', ()
 });
 
 test('参考片分析把普通朋友前段游戏演出作为完整目标并记录ASR限制', () => {
-  const analysisText = readFileSync(join(skill, 'references/reference-film-analysis.md'), 'utf8');
-  const productionText = readFileSync(join(skill, 'references/pixel-mv-production.md'), 'utf8');
-  const pixelVisualText = readFileSync(join(skill, 'references/pixel-game-visuals.md'), 'utf8');
+  const analysisText = readFileSync(join(skill, 'references/research-and-story.md'), 'utf8').split('## 参考片取证')[1];
+  const productionText = readFileSync(join(skill, 'references/storyboard-and-timing.md'), 'utf8');
+  const pixelVisualText = readFileSync(join(skill, 'references/pixel-visuals.md'), 'utf8');
 
   assert.match(analysisText, /00:00–01:06/);
   assert.match(analysisText, /605 张|605 帧/);

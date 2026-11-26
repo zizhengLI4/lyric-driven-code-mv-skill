@@ -2,7 +2,7 @@
 
 这是一个**技术检查夹具**，用于检验纯帧求值、像素摄像机、转场、字幕与导出。画面只有色块、网格和移动标记，双语句子也只是技术检查文案；默认音轨由代码合成，不对应任何真实歌曲或歌词。开头会烧入“渲染链路检查 · 合成节奏”。它不是 MV 样片，也不提供角色、故事或风格参考。开始真实项目时，应先依歌曲、角色和用户提供的风格替换检查画面及文案。
 
-不需要 npm 包、API Key、账号、外部服务或下载字体。需要本机已有 Node.js、ffmpeg（含 libx264、AAC、libass）和 ffprobe。模板不会安装软件。现有 HyperFrames、Remotion、Canvas 或其他框架工程应沿用原工程；通过纯帧接口适配所需能力，不强制替换框架。
+内置 starter 使用 Node.js，MP4 导出还使用本机的 FFmpeg（含 libx264、AAC、libass）和 FFprobe。字幕使用本机字体。现有 HyperFrames、Remotion、Canvas 或其他框架工程可沿用原工程，通过纯帧接口适配。
 
 复制整个 starter 目录，保留 review-gate.mjs 和 audio-review.mjs。目录是扁平结构，方便网页上传或复制：`frame.mjs` 共享纯帧、`timeline.mjs` 加载与适配分镜、`png.mjs` 内置 PNG 编码、`export.mjs` 导出与本地预览、`preview.html` 浏览器预览、此说明。不要把生成的 MP4、WAV 或 PNG 上传到 skill 仓库。
 
@@ -35,6 +35,8 @@ node export.mjs --frame-time 5.55 --frame-out C:\你的输出目录\world-frame.
 node export.mjs --frames-dir C:\你的输出目录\frames --frames-only
 node export.mjs --frames-dir C:\你的输出目录\frames --resume --out C:\你的输出目录\render-check.mp4
 ```
+
+内置演示用 Node.js 即可生成 PNG、WAV 和 ASS，配置媒体工具后可继续导出 MP4。接入外部音轨时使用 FFmpeg 和 FFprobe，混合提示音时使用 FFmpeg。
 
 恢复时参数必须与首次一致，包括 fps、输出尺寸、seed、字体及源码；示例默认参数正好一致。保存的 `render-config.json` 对配置与源码做 SHA-256 指纹，并保存每帧索引、文件名和 PNG 字节 SHA-256。恢复逐帧核对可信哈希、PNG 签名、CRC、解压行和 384×216 尺寸，拒绝同尺寸错置、混用或损坏。缺失帧会重算，已有可信帧复用；旧目录或中断留下的图片若没有逐帧可信指纹会重新生成，不会静默复用。目录已存在不会被视为“已经完成”，更改参数应使用新目录。临时 WAV/ASS 与临时 MP4 在输出路径旁生成并清理；帧目录模式会保留演示 WAV、ASS、PNG 与配置供恢复。
 
@@ -73,7 +75,7 @@ node export.mjs --storyboard C:\你的工程\storyboard.json --frame-time 2.5 --
 node export.mjs --storyboard C:\你的工程\storyboard.json --review C:\你的工程\visual-review.json --out C:\你的输出\song-mv.mp4
 ```
 
-用户确认本项目场景和人物后，按[确认记录格式](../../../references/production-review.md)填写 visual-review.json。真实歌曲的帧序列、短片和整曲都读该记录。传 --audio 只用于重定位同一文件。默认混入 project.sfx[] 与 scene.sfx[]，--sfx 用于要求该分镜至少有一条事件。复制到外部项目时，用 --sfx-script 指定 Skill 的 scripts/sfx.mjs 或实际的自定义音效模块。--no-sfx 用于演示分镜的静默技术检查。
+用户确认本项目场景和人物后，按[确认记录格式](../../../references/review-and-acceptance.md)填写 visual-review.json。真实歌曲的帧序列、短片和整曲都读该记录。传 --audio 只用于重定位同一文件。默认混入 project.sfx[] 与 scene.sfx[]，--sfx 用于要求该分镜至少有一条事件。复制到外部项目时，用 --sfx-script 指定 Skill 的 scripts/sfx.mjs 或项目内可信的音效模块。--no-sfx 用于演示分镜的静默技术检查。
 
 两层对齐关系见 [音效层与卡点](../../../references/sfx-and-beat.md)：visual/beat/free 锚点按事件选择，长音效可提前起声；beat 校验检查 `hitAt`，不把波形起点 `at` 误当落点。
 
@@ -134,7 +136,7 @@ Windows 默认使用已有 `Microsoft YaHei`；可通过 `--font "已有字体�
 
 `mode:"scene-panel"` 会同时改变浏览器预览和 ASS 导出的歌词层：主歌词暖白、辅助行淡色、彩色描边、深色像素面板和角标装饰。`chapter.show` 会把 `chapters[].title` 显示为章节牌。未提供 `captionStyle` 时保留普通底部双语字幕，旧分镜兼容；该配置只改变视觉呈现，不会替代歌词校对或关键卡点确认。
 
-导出自动用 ffprobe 核对时长、尺寸、实际帧率、H.264/AAC 及像素格式，并用 ffmpeg 解码全片。技术检查时看开头提示、转场边界、移动标记和字幕暗板。真实项目另外按[逐镜审片方法](../../../references/production-review.md)看最终 MP4，核素材清单里的确认记录和提示音。
+导出自动用 ffprobe 核对时长、尺寸、实际帧率、H.264/AAC 及像素格式，并用 ffmpeg 解码全片。技术检查时看开头提示、转场边界、移动标记和字幕暗板。真实项目另外按[逐镜审片方法](../../../references/review-and-acceptance.md)看最终 MP4，核素材清单里的确认记录和提示音。
 
 ```powershell
 ffprobe -v error -show_format -show_streams -of json C:\你的输出目录\render-check.mp4

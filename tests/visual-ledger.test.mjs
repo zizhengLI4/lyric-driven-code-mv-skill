@@ -30,7 +30,7 @@ test('visual ledger gives each lyric cue a concrete shot and a finishing plan', 
 });
 
 test('code-directed workflow guidance specifies observable prompts and deterministic frames', () => {
-  const guide = readFileSync(resolve(skill, 'references/code-directed-visuals.md'), 'utf8');
+  const guide = readFileSync(resolve(skill, 'references/research-and-story.md'), 'utf8').split('## 代码绘制与提示词')[1];
   for (const tag of ['<role>', '<context>', '<task>', '<specs>', '<style>', '<check>']) assert.ok(guide.includes(tag));
   assert.match(guide, /每一条 cue/);
   assert.match(guide, /同一成片时刻 `t` 求值/);

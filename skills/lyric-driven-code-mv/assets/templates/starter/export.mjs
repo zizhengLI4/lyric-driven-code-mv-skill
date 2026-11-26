@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { copyFile, mkdir, mkdtemp, readFile, writeFile, rename, readdir, rm, stat, realpath } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, writeFile, rename, readdir, rm, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, resolve, join, basename, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -11,10 +11,12 @@ import { createTimeline, captionSegmentsAtTime, DEFAULT_CAPTION_STYLE } from './
 import { encodePNG, inspectPNG } from './png.mjs';
 import { checkVisualReview, STARTER_VISUAL_SOURCES } from './review-gate.mjs';
 import { inspectAudioMix } from './audio-review.mjs';
+import { checkMediaTools } from './media-preflight.mjs';
+import { assertNoPathAliases, canonicalPath, pathKey } from './path-safety.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const HELP = `用法：node export.mjs [参数]
-无需 npm 包；需要已有 Node.js、ffmpeg（libx264/libass）和 ffprobe。
+无需 npm 包；MP4 导出需要 Node.js、ffmpeg（libx264/AAC/libass）和 ffprobe。
 默认：12 秒 / 30 fps / 384×216 像素网格 → 1920×1080，原创合成节奏与高分辨率双语字幕。
 
   --out PATH          MP4 输出路径（默认当前目录 render-check.mp4）
@@ -175,7 +177,8 @@ const frameOptions = c => ({ seed: c.seed, ...(c.timeline ? { timeline: c.timeli
 export async function exportFrame(c, log = console.log) {
   c = await loadProject(c);
   if (!c.frameOut || !Number.isFinite(c.frameTime) || c.frameTime < 0 || c.frameTime >= c.duration) throw new Error('--frame-time须位于[0,duration)，并提供--frame-out');
-  await assertNoOutputInputAliases(c, 'frame');
+  assertNoOutputInputAliases(c, 'frame');
+  if (c.frameFinal) preflight(c);
   await mkdir(dirname(c.frameOut), { recursive: true });
   let png;
   if (c.renderer === 'remotion') {
@@ -237,7 +240,7 @@ async function atomicWrite(path, data) {
 export async function prepareFrames(c, log = console.log) {
   c = await loadProject(c);
   c.visualReview = await confirmCurrentVisuals(c);
-  await assertNoOutputInputAliases(c);
+  assertNoOutputInputAliases(c);
   return writeFrames(c, log);
 }
 
@@ -447,37 +450,7 @@ async function fileTarget(path) {
   catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
 
-async function canonicalPath(path) {
-  let current = resolve(path);
-  const missingParts = [];
-  while (true) {
-    try {
-      const existingPath = await realpath(current);
-      return resolve(existingPath, ...missingParts.reverse());
-    } catch (error) {
-      if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error;
-      const parent = dirname(current);
-      if (parent === current) return resolve(current, ...missingParts.reverse());
-      missingParts.push(basename(current));
-      current = parent;
-    }
-  }
-}
-
-const pathKey = path => process.platform === 'win32' ? path.toLowerCase() : path;
-
-async function sameFile(first, second) {
-  if (pathKey(resolve(first)) === pathKey(resolve(second))) return true;
-  try {
-    const [a, b] = await Promise.all([stat(first), stat(second)]);
-    return a.isFile() && b.isFile() && a.dev === b.dev && a.ino === b.ino;
-  } catch (error) {
-    if (error.code === 'ENOENT') return false;
-    throw error;
-  }
-}
-
-async function assertNoOutputInputAliases(c, mode = 'video') {
+function assertNoOutputInputAliases(c, mode = 'video') {
   const inputs = [c.storyboard, c.audioPath, c.sfxScript, c.review, ...(c.visualReview?.files ?? [])].filter(Boolean);
   const outputs = [];
   if (mode === 'frame') outputs.push(c.frameOut);
@@ -485,37 +458,17 @@ async function assertNoOutputInputAliases(c, mode = 'video') {
     if (!c.framesOnly) outputs.push(c.out, `${c.out}.assets.json`);
     if (c.framesDir) {
       outputs.push(...['render-config.json', 'audio.wav', 'audio-mixed.wav', 'music-only.wav', 'sfx.wav', 'subtitles.ass', 'asset-manifest.json'].map(name => join(c.framesDir, name)));
-      const framesDirectory = await canonicalPath(c.framesDir);
+      const framesDirectory = canonicalPath(c.framesDir);
       const frameCount = Math.ceil((c.duration ?? DURATION) * c.fps - 1e-9);
       for (const input of inputs) {
-        const canonicalInput = await canonicalPath(input);
+        const canonicalInput = canonicalPath(input);
         if (pathKey(dirname(canonicalInput)) !== pathKey(framesDirectory)) continue;
         const match = /^frame-(\d{6})\.png$/i.exec(basename(canonicalInput));
         if (match && Number(match[1]) < frameCount) outputs.push(join(c.framesDir, basename(canonicalInput)));
       }
     }
   }
-  const [canonicalInputs, canonicalOutputs] = await Promise.all([
-    Promise.all(inputs.map(canonicalPath)),
-    Promise.all(outputs.filter(Boolean).map(canonicalPath)),
-  ]);
-  const inputByPath = new Map(canonicalInputs.map((path, index) => [pathKey(path), inputs[index]]));
-  const outputByPath = new Map();
-  for (let i = 0; i < canonicalOutputs.length; i++) {
-    const outputKey = pathKey(canonicalOutputs[i]);
-    const previousOutput = outputByPath.get(outputKey);
-    if (previousOutput || (await Promise.all(outputs.filter(Boolean).slice(0, i).map(path => sameFile(path, outputs.filter(Boolean)[i])))).some(Boolean)) {
-      throw new Error(`多个输出路径指向同一文件：${previousOutput ?? outputs.filter(Boolean)[i]} ↔ ${outputs.filter(Boolean)[i]}`);
-    }
-    outputByPath.set(outputKey, outputs.filter(Boolean)[i]);
-    let input = inputByPath.get(outputKey);
-    if (!input) {
-      for (const candidate of inputs) {
-        if (await sameFile(candidate, outputs.filter(Boolean)[i])) { input = candidate; break; }
-      }
-    }
-    if (input) throw new Error(`输出路径与输入文件冲突，为避免覆盖输入而停止：${outputs.filter(Boolean)[i]} ↔ ${input}`);
-  }
+  assertNoPathAliases({ inputs, outputs: outputs.filter(Boolean) });
 }
 
 /** 两个文件成对更新；失败时还原已备份交付，回滚失败保留备份供恢复。 */
@@ -551,11 +504,13 @@ function commandOutput(binary, args, label, timeout = 15000) {
 }
 
 export function preflight(c) {
-  const filters = commandOutput(c.ffmpeg, ['-hide_banner', '-filters'], 'ffmpeg');
-  if (!/\bass\s+V->V/.test(filters)) throw new Error('ffmpeg 缺少 libass 字幕过滤器；请使用已有完整版本');
-  const encoders = commandOutput(c.ffmpeg, ['-hide_banner', '-encoders'], 'ffmpeg');
-  if (!/\blibx264\b/.test(encoders) || !/\baac\b/.test(encoders)) throw new Error('ffmpeg 缺少 libx264 或 AAC 编码器');
-  commandOutput(c.ffprobe, ['-version'], 'ffprobe');
+  const encoding = !c.frameFinal && !c.framesOnly && !(c.preview && c.renderer === 'remotion');
+  const subtitles = c.frameFinal || encoding;
+  const needsAudioTools = !c.frameFinal && (c.audioPath || c.sfx?.length);
+  const ffmpeg = subtitles || needsAudioTools ? c.ffmpeg : null;
+  const ffprobe = encoding || (!c.frameFinal && c.audioPath) ? c.ffprobe : null;
+  const missing = checkMediaTools(ffmpeg, ffprobe, spawnSync, { subtitles, encoding }).filter(check => !check.ok);
+  if (missing.length) throw new Error(missing.map(check => `${check.name}：${check.detail}。${check.fix}`).join('\n'));
 }
 
 function checkSubtitleGlyphs(stderr) {
@@ -626,9 +581,9 @@ export async function verifyOutput(c, path) {
 
 export async function exportVideo(c, log = console.log) {
   c = await loadProject(c);
-  await assertNoOutputInputAliases(c);
+  assertNoOutputInputAliases(c);
   c.visualReview = await confirmCurrentVisuals(c);
-  if (c.visualReview) await assertNoOutputInputAliases(c);
+  if (c.visualReview) assertNoOutputInputAliases(c);
   if (!c.framesOnly) await Promise.all([c.out, `${c.out}.assets.json`].map(fileTarget));
   preflight(c);
   if (c.audioPath) {

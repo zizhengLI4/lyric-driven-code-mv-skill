@@ -5,7 +5,7 @@
 跟着走一遍，你会先验证渲染、字幕、音轨和媒体导出的技术链路，再接入自己的音乐和故事。
 第一次约 1.5 小时（大半花在装依赖），第二次 30 分钟。
 
-starter 默认输出是色块/网格检查卡，不是视频样片，也不提供角色、故事或视觉风格参考。新歌的美术按[《四格相纸》实帧与制作基准](skills/lyric-driven-code-mv/references/four-frame-photo-case.md)原创设计。
+starter 默认输出色块与网格检查卡。请按本曲设定绘制角色、场景和视觉风格。像素项目可按需参考[制作案例](skills/lyric-driven-code-mv/references/production-cases.md)。
 
 > 本文每条命令都在 Windows PowerShell + Node v24.16 + ffmpeg 9.0.2 实测跑过。
 > 文中所有耗时、帧数、BPM、偏差毫秒都是真实运行结果，不是示意值。
@@ -72,7 +72,7 @@ ffmpeg -version
 ffprobe -version
 ```
 
-三条都有版本号就跳到 [第 2 步](#2-拿到仓库并装-skill)。需要 Node ≥ 18 和任何近几年的 ffmpeg。
+有 Node.js 18+、FFmpeg 和 FFprobe 时，进入[第 2 步](#2-拿到仓库并装-skill)后运行预检，确认 FFmpeg 支持成片所需的滤镜和编码器。
 
 ### 1.2 装
 
@@ -95,23 +95,6 @@ brew install node ffmpeg
 sudo apt update && sudo apt install -y nodejs ffmpeg
 ```
 
-### 1.3 必须确认 ffmpeg 带这三个东西
-
-这是最容易翻车的一步——很多人装的是精简版 ffmpeg，渲染到字幕那一步才炸：
-
-```powershell
-ffmpeg -hide_banner -encoders 2>&1 | Select-String 'libx264|aac'
-ffmpeg -hide_banner -filters  2>&1 | Select-String 'ass'
-```
-
-**期望看到 `libx264`、`aac`、`ass` 三项都在。**
-
-- 缺 `libx264` 或 `aac` → 装完整版 ffmpeg
-- 缺 `ass` → 字幕这一步会直接失败，必须换完整版
-
-> 本项目**不需要** `npm install`、不需要 API Key、不需要账号、不需要下载字体。
-> 模板零第三方依赖，只用 Node 内置模块 + 本机 ffmpeg + 本机已装的字体。
-
 ---
 
 ## 2. 拿到仓库并装 skill
@@ -131,7 +114,28 @@ if (Test-Path -LiteralPath $target) { throw '同名 skill 已存在，先检查�
 Copy-Item -LiteralPath './skills/lyric-driven-code-mv' -Destination $target -Recurse
 ```
 
-**后面所有命令都在仓库根目录运行。**
+macOS 或 Linux 可从克隆的仓库根目录手动安装：
+
+```bash
+skill_root="${CODEX_HOME:-$HOME/.codex}/skills"
+mkdir -p "$skill_root"
+target="$skill_root/lyric-driven-code-mv"
+if [ -e "$target" ] || [ -L "$target" ]; then
+  printf '%s\n' '同名 Skill 已存在，请先检查现有版本。'
+else
+  cp -R ./skills/lyric-driven-code-mv "$target"
+fi
+```
+
+本指南其余命令在仓库根目录运行。下列预检也可在安装后的 Skill 目录运行，省略路径前缀 `skills/lyric-driven-code-mv/`。
+
+```bash
+node skills/lyric-driven-code-mv/scripts/check-environment.mjs --missing-only
+```
+
+`ready` 表示成片所需的 FFmpeg、FFprobe、ASS 滤镜和 H.264/AAC 编码检查通过。`partial` 表示可继续导出，并按需处理 Pillow 或中文字体提示。`needs_setup` 时按 `checks[].fix` 处理缺项。可以先输出世界层静帧或演示帧目录，再配置 MP4 所需工具。
+
+完整测试位于仓库的 `tests/`，在克隆的仓库根目录运行 `node --test`。macOS 或 Linux 请将下文命令中的 `python` 换成 `python3`，并按当前 shell 调整 PowerShell 路径和变量语法。
 
 ---
 
@@ -296,7 +300,7 @@ ffmpeg -v error -y -ss 37.2 -t 12 -i "你的歌.mp3" -ac 2 -ar 48000 -c:a pcm_s1
 
 ### 5.4 先确认静帧，再导出
 
-确认同一版本歌词、歌曲背景与热评后，用实际画法完成本曲分镜、场景和人物。先把各镜静帧和每位主角全身远景、原生面部近景给用户看。用 --frame-final 生成带正式字幕的 PNG。场景和人物都通过后，按[静帧确认与逐镜审片](skills/lyric-driven-code-mv/references/production-review.md)保存 visual-review.json。
+核对录音和歌词版本，按需要查证歌曲背景和公开热评。用实际画法完成本曲分镜、场景和人物。先把各镜静帧和每位主角全身远景、原生面部近景给用户看。用 --frame-final 生成带正式字幕的 PNG。场景和人物都通过后，按[静帧确认与逐镜审片](skills/lyric-driven-code-mv/references/review-and-acceptance.md)保存 visual-review.json。
 
 ```powershell
 $starter = 'skills/lyric-driven-code-mv/assets/templates/starter'
@@ -585,7 +589,7 @@ duration=12.000000
 
 `pix_fmt=yuv420p` 必须对，否则很多播放器和平台放不出来。
 
-逐镜正式审片按[静帧确认与逐镜审片](skills/lyric-driven-code-mv/references/production-review.md)生成索引和原尺寸帧。第 5 条实测在 12 秒示例上的输出：`可读变化点 14 个（每分钟 70 个）/ 最长空窗 2.3s（阈值 12s）`——它按切镜、材质、HUD、事件、字幕五类变化算，报的是"观众多久没看到新东西"。第 6 条出一张叠了顶部、底部 8.5%、右侧 6.5%、4:3、9:16 五条参考线的图，用眼睛确认字幕底边和 HUD 没压进去；这两条查完，再去看下面三件人眼的事。
+逐镜正式审片按[静帧确认与逐镜审片](skills/lyric-driven-code-mv/references/review-and-acceptance.md)生成索引和原尺寸帧。第 5 条实测在 12 秒示例上的输出：`可读变化点 14 个（每分钟 70 个）/ 最长空窗 2.3s（阈值 12s）`——它按切镜、材质、HUD、事件、字幕五类变化算，报的是"观众多久没看到新东西"。第 6 条出一张叠了顶部、底部 8.5%、右侧 6.5%、4:3、9:16 五条参考线的图，用眼睛确认字幕底边和 HUD 没压进去；这两条查完，再去看下面三件人眼的事。
 
 **然后做三件机器查不出来的事：**
 
@@ -687,7 +691,7 @@ my-mv/
 
 ## 附：从技术检查转到真实项目
 
-1. **镜长由信息密度决定**，不设固定上限；建议每 8–12 秒至少出现一次可读变化（字幕、HUD、光线、材质、粒子或状态）。等待和留白是结果时，可以保留长镜头。装置、章节牌和 HUD 字段见 [装置与章节](skills/lyric-driven-code-mv/references/story-devices.md) 与 [HUD 与字幕](skills/lyric-driven-code-mv/references/hud-and-subtitles.md)。
+1. **镜长由信息密度决定**，不设固定上限；建议每 8–12 秒至少出现一次可读变化（字幕、HUD、光线、材质、粒子或状态）。等待和留白是结果时，可以保留长镜头。装置、章节牌和 HUD 字段见 [装置与章节](skills/lyric-driven-code-mv/references/devices.md) 与 [HUD 与字幕](skills/lyric-driven-code-mv/references/hud-and-subtitles.md)。
 2. **先把分镜写满全程再渲**，不要边渲边加——时间一改，`lyrics`/`beats`/`events` 全要重算
    （校验器会用几十条错误提醒你漏改了什么）。
 3. **每次只改一处**，改完用 `--frame-time` 看单帧，或 `--width 640 --height 360 --fps 10` 快跑。

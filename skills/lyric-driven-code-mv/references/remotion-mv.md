@@ -36,4 +36,4 @@
 1. Remotion 组件使用 useCurrentFrame 驱动现有 renderFrame。项目专属画法仍写入原来的 frame.mjs 和场景模块。审片用本驱动的 --frame-final；visual-review.json 的 sources 除项目原有绘制源和素材，还要包含 remotion.jsx、remotion-runner.mjs。确认后再启动动态预览与导出。
 2. Studio 预览混合音轨与简化的中文字幕。最终字幕走原有 ASS 排版，逐词着色、安全区及双语效果以正式静帧与成片为准。使用上述导出入口完成混音、字幕及审片记录检查。交付前用 ffprobe 核流、时长和帧率，抽查动作前后帧及最终音轨里的音效窗口。
 
-画面落点、起势和回弹沿用[动作卡点与成片复核](sfx-and-beat.md#动作卡点与成片复核)。
+画面落点、起势和回弹沿用动作卡点与成片复核。

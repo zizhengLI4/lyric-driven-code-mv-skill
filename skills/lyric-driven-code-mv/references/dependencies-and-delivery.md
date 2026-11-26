@@ -2,7 +2,21 @@
 
 ## 一种路线，最少依赖
 
-先检查已有 Node、FFmpeg、FFprobe、工程依赖/锁文件及浏览器。版本按当前官方要求选择，不能把本机版本当成通用要求。
+从 Skill 安装目录运行：
+
+```bash
+node scripts/check-environment.mjs --missing-only
+```
+
+预检使用 Node.js 18+，无需 Python 或 npm 包。尚无 Node 时先用 `node --version` 检查。预检只读取本机工具和字体，输出 JSON。省略 `--missing-only` 可看全部结果。
+
+| 状态 | 下一步 |
+|---|---|
+| `ready` | starter 所需工具可运行。用正式字幕单帧确认实际字形。 |
+| `partial` | starter 可运行。按项目需要处理 Pillow 或中文字体提示。 |
+| `needs_setup`（退出码 1） | 依据缺项的 `fix` 检查已有安装。可继续写分镜、查时间线或输出 Node 世界层静帧。 |
+
+MP4 导出检查 ASS 滤镜、libx264、AAC 和 FFprobe。正式字幕单帧用 FFmpeg 的 ASS 滤镜。世界层静帧和内置演示的 `--frames-only` 可仅用 Node.js。帧目录模式在裁剪外部音轨时使用 FFmpeg 与 FFprobe，在混合提示音时使用 FFmpeg。未探测到中文字体时先实测目标字形。Pillow 走 Windows 的 `python` 或 macOS/Linux 的 `python3`，预检也支持用 `PYTHON` 指定解释器。Remotion 依赖依具体工程及锁文件检查。
 
 | 路线 | 必需 | 按需要增加 |
 |---|---|---|
@@ -21,14 +35,14 @@ Canvas/SVG 是浏览器原生能力；已有浏览器不代表框架要求的版
 
 ```powershell
 New-Item -ItemType Directory -Path 'work' -Force | Out-Null
-Copy-Item -LiteralPath 'assets/templates/starter' -Destination 'work/my-mv' -Recurse
+Copy-Item -LiteralPath '<Skill 安装目录>/assets/templates/starter' -Destination 'work/my-mv' -Recurse
 node work/my-mv/export.mjs --help
 node work/my-mv/export.mjs --preview
 ```
 
 预览地址由命令输出，静音查看首帧、跳播与转场。导出及单帧检查按 starter 当前说明执行；接歌曲时从自己的分镜 JSON 配置 `--storyboard`，音轨记录应描述实际使用的文件。已有工程沿用自己的渲染器与单帧入口，不为获得第一帧另建完整渲染系统。
 
-需要正式画幅和字幕时给单帧命令加 --frame-final。实际歌曲的动态与批量写帧须有[场景和人物定版记录](production-review.md)。Pillow 供使用它的 Python 辅助脚本及 RPG 示例。用当前 shell 的 python -c "import PIL" 验证。FFmpeg 与 FFprobe 可从本机 PATH 取用，也接受 FFMPEG_PATH、FFPROBE_PATH。若找得到但不能执行，保留返回码和拒绝路径，报告实际阻碍。调用额外安装、下载或服务之前说明其用途与所需权限。
+需要正式画幅和字幕时给单帧命令加 --frame-final。实际歌曲的动态与批量写帧须有场景和人物定版记录。FFmpeg 与 FFprobe 可从本机 PATH 取用，也接受 FFMPEG_PATH、FFPROBE_PATH。参数 --ffmpeg、--ffprobe 和 --sfx-script 应指向本地可信程序或模块。使用项目工作目录或专门的交付目录承接导出。调用额外安装、下载或服务之前说明其用途与所需权限。
 
 ## 渲染与恢复
 
@@ -115,3 +129,55 @@ node path/to/skill/scripts/qa.mjs frame.mjs --duration 12 --fps 30 --storyboard 
 - [Remotion Sequence](https://www.remotion.dev/docs/sequence)、[音轨裁剪](https://www.remotion.dev/docs/media/audio)、[固定随机数](https://www.remotion.dev/docs/random)、[授权](https://www.remotion.dev/docs/license)
 - [Canvas 像素缩放](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/imageSmoothingEnabled)
 - [FFmpeg / FFprobe](https://ffmpeg.org/documentation.html)
+
+## 渲染与导出排障
+
+### 时间与长镜头
+
+所有分镜时间使用成片秒，区间为 `[start,end)`。长镜头不自动切成 4–8 秒；先检查 8–12 秒内是否有可读变化，再决定是否拆镜。starter 的 `designT` 是内置画法的适配时钟，不能误当成真实成片秒。
+
+### 常见故障
+
+- 装置或 HUD 写进 JSON，却没有为 `scene.id` 注册画法：校验通过不等于画面出现；先做代表帧。
+- 章节牌跨越镜头边界时只改字幕，背景状态没有同步：在章节起点和结尾各抽帧。
+- 长镜头的 HUD 数值只在首帧设置：用时间直接求值，避免上一帧状态漂移。
+- 画面元素贴近四边：在最终分辨率检查安全区，不以低分辨率世界层的“看得见”为准。
+- 负向值和损坏状态没有结果动作：补上触发原因、失败反馈或留白。
+- 把均匀抽帧报告当成 BPM 或实现框架证据：在交付记录中保留“未知/推断”标记。
+
+导出后仍需 FFprobe、完整解码和首尾/转场/动作峰值抽帧。只要没有实际试听，就不要把候选拍点写成已验证同步。
+
+### 出片链路
+
+直出管道（`-f rawvideo` / `image2pipe` 写 FFmpeg 的 stdin）比落盘快，代价是失败时没有中间产物可复用。子进程提前退出时，往它已关闭的管道写会抛异常，异常类型在 Windows + Python 3.13 上实测如下：
+
+| ffmpeg 失败原因 | 实测抛出的异常 |
+|---|---|
+| 编码器名写错（`-c:v nonexistent`） | `BrokenPipeError: [Errno 32]` |
+| 输出目录不存在 | `BrokenPipeError: [Errno 32]` |
+| 输入文件不存在 | `BrokenPipeError: [Errno 32]` |
+| 参数非法 | `BrokenPipeError: [Errno 32]` |
+| 滤镜名不存在 | `BrokenPipeError: [Errno 32]` |
+
+**关键事实：`BrokenPipeError` 是 `OSError` 的子类**（`issubclass(BrokenPipeError, OSError) is True`）。所以 `except BrokenPipeError` 足以接住上面全部五种；写成 `except (BrokenPipeError, OSError)` 并不会多接住什么，它只是让意图更明显。
+
+真正的坑不在异常类型，而在**只 catch 却不读 stderr**：这样拿到的是一个没有上下文的 `Broken pipe`，看不出 ffmpeg 到底为什么退出。所以必须用 `stderr=subprocess.PIPE`，在异常分支里把 ffmpeg 自己的报错读出来：
+
+```python
+assert audio.exists(), f"音轨不存在：{audio}"
+assert out.parent.exists(), f"输出目录不存在：{out.parent}"
+proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+try:
+    for i in range(total):
+        proc.stdin.write(render_frame(i).tobytes())
+    proc.stdin.close()
+except (BrokenPipeError, OSError):
+    try: proc.stdin.close()
+    except OSError: pass
+    code = proc.wait()
+    raise SystemExit(f"FFmpeg 提前退出（码 {code}）：{proc.stderr.read().decode('utf-8', 'replace')[-400:]}")
+```
+
+FFmpeg 命令相应地用 `-v error` 限制 stderr 体积，避免管道写满阻塞。加 `stderr=subprocess.DEVNULL` 或写完再 `stdin.close()` 只处理正常收尾，不覆盖「子进程早退」这一种。渲染前的两条 `assert` 价值最高：参数写错时在第一帧就报出来，不用等渲染完几千帧。
+
+长片优先落盘：直出中断要整片重来，`--frames-dir` 配 `--resume` 只补缺失帧，产线取舍见 依赖与交付 的产线表。
